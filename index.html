@@ -28,7 +28,7 @@
     
     <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
     <link rel="stylesheet" href="css/styles.css?v=20261112sources1">
-    <link rel="stylesheet" href="css/home.css?v=20261112sources1">
+    <link rel="stylesheet" href="css/home.css?v=20261112nodisclaimer1">
 </head>
 <body class="page-bg text-white">
     <header class="site-header">
@@ -226,11 +226,12 @@
     </main>
 
     <!-- 详情模态框 -->
-    <div id="modal" class="fixed inset-0 bg-black/95 hidden flex items-center justify-center transition-opacity duration-300 z-40">
+    <div id="modal" class="fixed inset-0 bg-black/95 hidden flex items-center justify-center transition-opacity duration-300 z-40"
+         role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true">
         <div class="bg-[#111] p-8 rounded-lg w-11/12 max-w-4xl border border-[#333] max-h-[90vh] flex flex-col">
             <div class="flex justify-between items-center mb-6 flex-none">
                 <h2 id="modalTitle" class="text-2xl font-bold gradient-text break-words pr-4 max-w-[80%]"></h2>
-                <button onclick="closeModal()" class="text-gray-400 hover:text-white text-2xl transition-colors flex-shrink-0">&times;</button>
+                <button onclick="closeModal()" aria-label="关闭详情" class="text-gray-400 hover:text-white text-2xl transition-colors flex-shrink-0">&times;</button>
             </div>
             <div id="modalContent" class="overflow-auto flex-1 min-h-0">
                 <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
@@ -253,32 +254,6 @@
                     <button id="passwordSubmitBtn" type="submit" class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">提交</button>
                 </form>
                 <p id="passwordError" class="text-red-500 mt-2 hidden">密码错误，请重试</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- 版权声明弹窗 -->
-    <div id="disclaimerModal" class="fixed inset-0 bg-black/90 hidden items-center justify-center z-[60]">
-        <div class="bg-[#111] p-8 rounded-lg border border-[#333] w-11/12 max-w-2xl max-h-[90vh] overflow-y-auto">
-            <h2 class="text-2xl font-bold gradient-text mb-6 text-center">使用声明</h2>
-            <div class="text-gray-300 space-y-4">
-                <p>
-                    欢迎使用本站。在开始使用前，请您了解并同意以下条款：
-                </p>
-                <p>
-                    <strong class="text-blue-400">服务性质：</strong> 本站仅提供视频搜索服务，不直接提供、存储或上传任何视频内容。所有搜索结果均来自第三方公开接口。
-                </p>
-                <p>
-                    <strong class="text-blue-400">用户责任：</strong> 用户在使用本站服务时，须遵守相关法律法规，不得利用搜索结果从事侵权行为，如下载、传播未经授权的作品等。
-                </p>
-                <p>
-                    <strong class="text-blue-400">侵权投诉：</strong> 若您是版权方或相关权利人，发现搜索结果中存在侵犯您合法权益的内容，请通过 <a href="mailto:troll@pissmail.com" class="text-blue-400 hover:underline">troll@pissmail.com</a> 向我们反馈。我们将在收到投诉后尽快核实处理。
-                </p>
-            </div>
-            <div class="mt-6 flex justify-center">
-                <button id="acceptDisclaimerBtn" class="px-6 py-3 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold rounded-lg hover:shadow-lg transition-all duration-300">
-                    我已了解并接受
-                </button>
             </div>
         </div>
     </div>
@@ -318,11 +293,11 @@
         // 保存原始 js‑sha256 实现，避免被 password.js 覆盖
         window._jsSha256 = window.sha256;
     </script>
-    <script src="js/config.js?v=20261112sources1"></script>
-    <script src="js/ui.js?v=20261112sources1"></script>
+    <script src="js/config.js?v=20261112playercache1"></script>
+    <script src="js/ui.js?v=20261112nodisclaimer1"></script>
     <script src="js/api.js?v=20261112sources1"></script>
     <script src="js/password.js?v=20261112sources1"></script>
-    <script src="js/app.js?v=20261112sources1"></script>
+    <script src="js/app.js?v=20261112playercache1"></script>
     <script src="js/douban.js?v=20261112sources1"></script>
 
     <!-- PWA 注册 -->
@@ -344,27 +319,5 @@
         window.__ENV__.PASSWORD = "{{PASSWORD}}";
     </script>
 
-    <!-- 弹窗显示脚本 -->
-    <script>
-        // 在页面加载完成后检查用户是否首次访问
-        document.addEventListener('DOMContentLoaded', function() {
-            // 检查用户是否已经看过声明
-            const hasSeenDisclaimer = localStorage.getItem('hasSeenDisclaimer');
-            
-            if (!hasSeenDisclaimer) {
-                // 显示弹窗
-                const disclaimerModal = document.getElementById('disclaimerModal');
-                disclaimerModal.style.display = 'flex';
-                
-                // 添加接受按钮事件
-                document.getElementById('acceptDisclaimerBtn').addEventListener('click', function() {
-                    // 保存用户已看过声明的状态
-                    localStorage.setItem('hasSeenDisclaimer', 'true');
-                    // 隐藏弹窗
-                    disclaimerModal.style.display = 'none';
-                });
-            }
-        });
-    </script>
 </body>
 </html>

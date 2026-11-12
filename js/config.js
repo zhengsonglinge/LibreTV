@@ -4,6 +4,12 @@ const PROXY_URL = '/proxy/';    // 适用于 Cloudflare, Netlify (带重写), Ve
 const SEARCH_HISTORY_KEY = 'videoSearchHistory';
 const MAX_HISTORY_ITEMS = 5;
 
+const PLAYER_SOURCE_CACHE_CONFIG = {
+    storageKey: 'libreTVPlayerSourceCandidates',
+    version: 1,
+    maxAge: 30 * 60 * 1000
+};
+
 // 密码保护配置
 const PASSWORD_CONFIG = {
     localStorageKey: 'passwordVerified',  // 存储验证状态的键名
@@ -149,7 +155,7 @@ const API_SITES = {
 const AGGREGATED_SEARCH_CONFIG = {
     enabled: true,             // 是否启用聚合搜索
     timeout: 8000,             // 单个源超时时间（毫秒）
-    totalTimeout: 4000,        // 整轮搜索最长等待时间（毫秒）
+    totalTimeout: 12000,       // 整轮搜索的兜底超时，需大于单源超时
     maxResults: 300,           // 最多保留的结果数量
     initialRenderLimit: 60,    // 首次展示的结果数量
     renderBatchSize: 60,       // 每次“加载更多”增加的数量

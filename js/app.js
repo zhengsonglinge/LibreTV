@@ -1,11 +1,53 @@
 // 全局变量
-let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '["dyttzy", "bfzy", "ruyi"]'); // 默认选中电影天堂、暴风资源和如意资源
-const storedSelectedAPIs = [...selectedAPIs];
+let customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]'); // 存储自定义API列表
+
+// 默认启用全部非成人内置资源，以及用户已添加的自定义资源
+const DEFAULT_SELECTED_APIS = [
+    ...Object.keys(API_SITES).filter(apiId => !API_SITES[apiId].adult),
+    ...customAPIs.map((_, index) => 'custom_' + index)
+];
+const LEGACY_DEFAULT_SELECTED_APIS = ['dyttzy', 'bfzy', 'ruyi'];
+const DEFAULT_SOURCES_VERSION = 'all-sources-v1';
+
+function getInitialSelectedAPIs() {
+    const storedSelection = localStorage.getItem('selectedAPIs');
+    if (!storedSelection) {
+        return { apis: [...DEFAULT_SELECTED_APIS], needsPersist: true };
+    }
+
+    try {
+        const parsedSelection = JSON.parse(storedSelection);
+        if (Array.isArray(parsedSelection)) {
+            return { apis: parsedSelection, needsPersist: false };
+        }
+    } catch (error) {
+        console.warn('读取已选资源失败，将使用全部资源作为默认值:', error);
+    }
+
+    return { apis: [...DEFAULT_SELECTED_APIS], needsPersist: true };
+}
+
+const initialSelection = getInitialSelectedAPIs();
+let selectedAPIs = initialSelection.apis;
+let needsSelectionPersist = initialSelection.needsPersist;
+
+// 将旧版本残留的默认三源选择迁移为全选，保留用户明确设置过的其他组合
+if (localStorage.getItem('hasInitializedDefaults') === 'true') {
+    const isLegacyDefault = selectedAPIs.length === LEGACY_DEFAULT_SELECTED_APIS.length &&
+        LEGACY_DEFAULT_SELECTED_APIS.every(apiId => selectedAPIs.includes(apiId));
+    if (isLegacyDefault) {
+        selectedAPIs = [...DEFAULT_SELECTED_APIS];
+        needsSelectionPersist = true;
+    }
+    localStorage.setItem('hasInitializedDefaults', DEFAULT_SOURCES_VERSION);
+}
+
+const previousSelectedAPIs = [...selectedAPIs];
 selectedAPIs = selectedAPIs.filter(apiId => apiId.startsWith('custom_') || Boolean(API_SITES[apiId]));
-if (selectedAPIs.length !== storedSelectedAPIs.length) {
+if (needsSelectionPersist || selectedAPIs.length !== previousSelectedAPIs.length) {
     localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
 }
-let customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]'); // 存储自定义API列表
+
 let activeSearchRun = null;
 let searchRunSequence = 0;
 
@@ -22,6 +64,22 @@ let episodesReversed = false;
 
 // 页面初始化
 document.addEventListener('DOMContentLoaded', function () {
+    // 设置首次访问的默认选项，必须在渲染复选框之前完成
+    if (!localStorage.getItem('hasInitializedDefaults')) {
+        selectedAPIs = [...DEFAULT_SELECTED_APIS];
+        localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+
+        // 默认选中过滤开关
+        localStorage.setItem('yellowFilterEnabled', 'true');
+        localStorage.setItem(PLAYER_CONFIG.adFilteringStorage, 'true');
+
+        // 默认启用豆瓣功能
+        localStorage.setItem('doubanEnabled', 'true');
+
+        // 标记已初始化默认值
+        localStorage.setItem('hasInitializedDefaults', DEFAULT_SOURCES_VERSION);
+    }
+
     // 初始化API复选框
     initAPICheckboxes();
 
@@ -33,24 +91,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 渲染搜索历史
     renderSearchHistory();
-
-    // 设置默认API选择（如果是第一次加载）
-    if (!localStorage.getItem('hasInitializedDefaults')) {
-        // 默认选择所有非成人资源
-        selectedAPIs = Object.keys(API_SITES).filter(apiKey => !API_SITES[apiKey].adult);
-        // selectedAPIs = ["dyttzy", "bfzy", "ruyi"];
-        localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
-
-        // 默认选中过滤开关
-        localStorage.setItem('yellowFilterEnabled', 'true');
-        localStorage.setItem(PLAYER_CONFIG.adFilteringStorage, 'true');
-
-        // 默认启用豆瓣功能
-        localStorage.setItem('doubanEnabled', 'true');
-
-        // 标记已初始化默认值
-        localStorage.setItem('hasInitializedDefaults', 'true');
-    }
 
     // 设置黄色内容过滤开关初始状态
     const yellowFilterToggle = document.getElementById('yellowFilterToggle');
@@ -637,7 +677,6 @@ function setSearchButtonBusy(isBusy) {
 function abortActiveSearch() {
     if (!activeSearchRun) return;
     clearTimeout(activeSearchRun.deadlineId);
-    clearTimeout(activeSearchRun.renderTimer);
     activeSearchRun.controller.abort();
     activeSearchRun = null;
 }
@@ -655,6 +694,96 @@ function getSearchResultKey(item) {
     const id = String(item.vod_id || '').trim();
     const name = String(item.vod_name || '').trim();
     return id ? `${source}|${id}` : `${source}|${name}|${item.vod_year || ''}`;
+}
+
+function normalizeSearchText(value) {
+    return String(value || '')
+        .normalize('NFKC')
+        .toLocaleLowerCase('zh-CN')
+        .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function getCharacterBigrams(value) {
+    if (!value) return [];
+    if (value.length === 1) return [value];
+
+    const bigrams = [];
+    for (let index = 0; index < value.length - 1; index += 1) {
+        bigrams.push(value.slice(index, index + 2));
+    }
+    return bigrams;
+}
+
+function calculateDiceSimilarity(left, right) {
+    if (!left || !right) return 0;
+    if (left === right) return 1;
+
+    const leftBigrams = getCharacterBigrams(left);
+    const rightBigrams = getCharacterBigrams(right);
+    if (leftBigrams.length === 0 || rightBigrams.length === 0) return 0;
+
+    const counts = new Map();
+    leftBigrams.forEach(bigram => {
+        counts.set(bigram, (counts.get(bigram) || 0) + 1);
+    });
+
+    let overlap = 0;
+    rightBigrams.forEach(bigram => {
+        const count = counts.get(bigram) || 0;
+        if (count > 0) {
+            overlap += 1;
+            counts.set(bigram, count - 1);
+        }
+    });
+
+    return (2 * overlap) / (leftBigrams.length + rightBigrams.length);
+}
+
+function scoreNormalizedText(query, text) {
+    if (!query || !text) return 0;
+    if (text === query) return 1;
+    if (text.startsWith(query)) return 0.92;
+    if (text.includes(query)) return 0.84;
+    if (query.includes(text) && text.length >= 2) return 0.76;
+    return calculateDiceSimilarity(query, text) * 0.7;
+}
+
+function calculateSearchSimilarity(query, item) {
+    const normalizedQuery = normalizeSearchText(query);
+    if (!normalizedQuery) return 0;
+
+    const titleScore = scoreNormalizedText(
+        normalizedQuery,
+        normalizeSearchText(item.vod_name)
+    );
+    const aliasScore = Math.max(
+        scoreNormalizedText(normalizedQuery, normalizeSearchText(item.vod_sub)),
+        scoreNormalizedText(normalizedQuery, normalizeSearchText(item.vod_en))
+    );
+    const metadataScore = Math.max(
+        scoreNormalizedText(normalizedQuery, normalizeSearchText(item.vod_actor)),
+        scoreNormalizedText(normalizedQuery, normalizeSearchText(item.vod_director)),
+        scoreNormalizedText(normalizedQuery, normalizeSearchText(item.vod_tag)),
+        scoreNormalizedText(normalizedQuery, normalizeSearchText(item.vod_class))
+    );
+
+    return titleScore * 1000 + aliasScore * 20 + metadataScore * 10;
+}
+
+function sortSearchResultsByRelevance(results, query) {
+    return results
+        .map((item, index) => ({
+            item,
+            index,
+            score: calculateSearchSimilarity(query, item),
+            titleLength: normalizeSearchText(item.vod_name).length
+        }))
+        .sort((left, right) =>
+            right.score - left.score ||
+            left.titleLength - right.titleLength ||
+            left.index - right.index
+        )
+        .map(entry => entry.item);
 }
 
 function renderSearchCard(item) {
@@ -768,18 +897,9 @@ function flushSearchResults(run) {
     updateSearchResultSummary(run);
 }
 
-function scheduleSearchResultRender(run) {
-    if (!isCurrentSearchRun(run) || run.renderTimer) return;
-    run.renderTimer = setTimeout(() => {
-        run.renderTimer = null;
-        flushSearchResults(run);
-    }, 40);
-}
-
 function appendSearchResults(run, results) {
     if (!isCurrentSearchRun(run) || !run.acceptResults) return;
 
-    let changed = false;
     for (const item of results) {
         if (run.results.length >= AGGREGATED_SEARCH_CONFIG.maxResults) {
             run.truncated = true;
@@ -791,14 +911,9 @@ function appendSearchResults(run, results) {
         if (run.seenKeys.has(key)) continue;
         run.seenKeys.add(key);
         run.results.push(item);
-        changed = true;
     }
 
-    if (changed) {
-        scheduleSearchResultRender(run);
-    } else {
-        updateSearchResultSummary(run);
-    }
+    updateSearchResultSummary(run);
 }
 
 function finalizeSearchResults(run) {
@@ -809,6 +924,7 @@ function finalizeSearchResults(run) {
     run.completed = true;
     run.acceptResults = false;
 
+    run.results = sortSearchResultsByRelevance(run.results, run.query);
     flushSearchResults(run);
 
     if (run.results.length === 0) {
@@ -916,6 +1032,7 @@ async function search() {
     abortActiveSearch();
     const run = {
         id: ++searchRunSequence,
+        query,
         controller: new AbortController(),
         results: [],
         seenKeys: new Set(),
@@ -924,7 +1041,6 @@ async function search() {
         renderedCount: 0,
         renderLimit: AGGREGATED_SEARCH_CONFIG.initialRenderLimit,
         deadlineId: null,
-        renderTimer: null,
         completed: false,
         timedOut: false,
         truncated: false,
@@ -933,7 +1049,7 @@ async function search() {
 
     activeSearchRun = run;
     setSearchButtonBusy(true);
-    showLoading('正在搜索多个来源...');
+    showLoading('正在汇总结果…');
     resetSearchResultUi();
 
     try {
@@ -1058,11 +1174,82 @@ async function showDetails(id, vod_name, sourceCode) {
         }
 
         modal.classList.remove('hidden');
+        modal.setAttribute('aria-hidden', 'false');
     } catch (error) {
         console.error('获取详情错误:', error);
         showToast('获取详情失败，请稍后重试', 'error');
     } finally {
         hideLoading();
+    }
+}
+
+function extractEpisodesFromPlayUrl(playUrl) {
+    if (!playUrl || typeof playUrl !== 'string') return [];
+
+    const mainSource = playUrl.split('$$$')[0] || '';
+    return mainSource
+        .split('#')
+        .map(episode => episode.split('$')[1])
+        .map(url => String(url || '').trim())
+        .filter(url => /^https?:\/\//.test(url));
+}
+
+function buildPlayerSourceCandidates(title, results) {
+    const normalizedTitle = normalizeSearchText(title);
+    if (!normalizedTitle || !Array.isArray(results)) return [];
+
+    const candidatesBySource = new Map();
+    results.forEach(item => {
+        const sourceCode = String(item.source_code || '');
+        if (!sourceCode) return;
+
+        const titleScore = scoreNormalizedText(
+            normalizedTitle,
+            normalizeSearchText(item.vod_name)
+        );
+        if (titleScore < 0.55) return;
+
+        const current = candidatesBySource.get(sourceCode);
+        if (current && current.titleScore >= titleScore) return;
+
+        candidatesBySource.set(sourceCode, {
+            source_code: sourceCode,
+            source_name: item.source_name || '',
+            vod_id: String(item.vod_id || ''),
+            vod_name: item.vod_name || title,
+            episodes: extractEpisodesFromPlayUrl(item.vod_play_url),
+            api_url: item.api_url || '',
+            titleScore
+        });
+    });
+
+    return Array.from(candidatesBySource.values()).map(candidate => ({
+        source_code: candidate.source_code,
+        source_name: candidate.source_name,
+        vod_id: candidate.vod_id,
+        vod_name: candidate.vod_name,
+        episodes: candidate.episodes,
+        api_url: candidate.api_url
+    }));
+}
+
+function rememberPlayerSourceCandidates(title) {
+    if (!title || !activeSearchRun || !Array.isArray(activeSearchRun.results)) return;
+
+    const items = buildPlayerSourceCandidates(title, activeSearchRun.results);
+    try {
+        if (items.length === 0) {
+            sessionStorage.removeItem(PLAYER_SOURCE_CACHE_CONFIG.storageKey);
+            return;
+        }
+        sessionStorage.setItem(PLAYER_SOURCE_CACHE_CONFIG.storageKey, JSON.stringify({
+            version: PLAYER_SOURCE_CACHE_CONFIG.version,
+            title,
+            timestamp: Date.now(),
+            items
+        }));
+    } catch (error) {
+        console.warn('保存播放页片源结果失败:', error);
     }
 }
 
@@ -1104,6 +1291,7 @@ function playVideo(url, vod_name, sourceCode, episodeIndex = 0) {
 
     // 构建视频信息对象，使用标题作为唯一标识
     const videoTitle = vod_name || currentVideoTitle;
+    rememberPlayerSourceCandidates(videoTitle);
     const videoInfo = {
         title: videoTitle,
         url: url,

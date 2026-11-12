@@ -1378,15 +1378,13 @@ body.page-bg::before {
 }
 
 #modal,
-#passwordModal,
-#disclaimerModal {
+#passwordModal {
     background: rgba(28, 26, 23, 0.46) !important;
     backdrop-filter: blur(12px);
 }
 
 #modal > div,
-#passwordModal > div,
-#disclaimerModal > div {
+#passwordModal > div {
     border: 1px solid var(--line) !important;
     border-radius: 15px !important;
     color: var(--ink);
@@ -1402,8 +1400,7 @@ body.page-bg::before {
 }
 
 #modalContent button,
-#passwordSubmitBtn,
-#acceptDisclaimerBtn {
+#passwordSubmitBtn {
     border: 1px solid var(--line) !important;
     border-radius: 7px !important;
     color: var(--ink) !important;
@@ -1412,8 +1409,7 @@ body.page-bg::before {
 }
 
 #modalContent button:hover,
-#passwordSubmitBtn:hover,
-#acceptDisclaimerBtn:hover {
+#passwordSubmitBtn:hover {
     border-color: var(--accent) !important;
     color: #fff !important;
     background: var(--accent) !important;
@@ -1430,8 +1426,7 @@ body.page-bg::before {
     border-color: var(--accent) !important;
 }
 
-#passwordModal .text-gray-300,
-#disclaimerModal .text-gray-300 {
+#passwordModal .text-gray-300 {
     color: var(--ink-soft) !important;
 }
 
@@ -1459,8 +1454,7 @@ body.page-bg::before {
 }
 
 #modal .bg-\[\#111\],
-#passwordModal .bg-\[\#111\],
-#disclaimerModal .bg-\[\#111\] {
+#passwordModal .bg-\[\#111\] {
     background: var(--surface) !important;
 }
 
@@ -1538,8 +1532,26 @@ body.page-bg::before {
 }
 
 #messageBoxModal #confirmBoxModal {
+    border: 1px solid #b33a28 !important;
+    color: #fff !important;
+    background: #b33a28 !important;
+}
+
+#messageBoxModal #confirmBoxModal:hover {
+    border-color: #922b1d !important;
+    background: #922b1d !important;
+}
+
+#messageBoxModal #cancelBoxModal {
+    border: 1px solid var(--line) !important;
+    color: var(--ink-soft) !important;
     background: var(--surface-soft) !important;
+}
+
+#messageBoxModal #cancelBoxModal:hover {
+    border-color: var(--line-strong) !important;
     color: var(--ink) !important;
+    background: var(--surface) !important;
 }
 
 #showImportBoxModal #dropZone {

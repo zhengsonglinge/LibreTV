@@ -108,7 +108,10 @@ function updateSiteStatus(isAvailable) {
 }
 
 function closeModal() {
-    document.getElementById('modal').classList.add('hidden');
+    const modal = document.getElementById('modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
     // 清除 iframe 内容
     document.getElementById('modalContent').innerHTML = '';
 }
@@ -607,6 +610,26 @@ toggleSettings = function(e) {
 
 // 点击外部关闭历史面板
 document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Escape' && e.key !== 'Esc') return;
+
+        const messageBoxModal = document.getElementById('messageBoxModal');
+        if (messageBoxModal) {
+            e.preventDefault();
+            messageBoxModal.remove();
+            return;
+        }
+
+        const modal = document.getElementById('modal');
+        if (!modal || modal.classList.contains('hidden')) return;
+
+        const passwordModal = document.getElementById('passwordModal');
+        if (passwordModal && !passwordModal.classList.contains('hidden')) return;
+
+        e.preventDefault();
+        closeModal();
+    });
+
     document.addEventListener('click', function(e) {
         const historyPanel = document.getElementById('historyPanel');
         const historyButton = document.querySelector('button[onclick="toggleHistory(event)"]');
@@ -632,6 +655,7 @@ function clearLocalStorage() {
     modal = document.createElement('div');
     modal.id = 'messageBoxModal';
     modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-40';
+    modal.style.zIndex = '1000';
 
     modal.innerHTML = `
         <div class="bg-[#191919] rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto relative">
@@ -643,8 +667,8 @@ function clearLocalStorage() {
                 <div class="text-sm font-medium text-gray-300">确定要清除页面缓存吗？</div>
                 <div class="text-sm font-medium text-gray-300 mb-4">此功能会删除你的观看记录和自定义 API 接口，<scan class="text-red-500 font-bold">此操作不可恢复！</scan></div>
                 <div class="flex justify-end space-x-2">
-                    <button id="confirmBoxModal" class="ml-2 bg-gray-600 hover:bg-gray-700 text-white px-4 py-1 rounded">确定</button>
-                    <button id="cancelBoxModal" class="ml-2 bg-pink-600 hover:bg-pink-700 text-white px-4 py-1 rounded">取消</button>
+                    <button id="confirmBoxModal" class="ml-2 px-4 py-1 rounded font-medium">确定</button>
+                    <button id="cancelBoxModal" class="ml-2 px-4 py-1 rounded font-medium">取消</button>
                 </div>
             </div>
         </div>`;
@@ -660,19 +684,7 @@ function clearLocalStorage() {
     // 添加事件监听器 - 确定按钮
     document.getElementById('confirmBoxModal').addEventListener('click', function () {
         localStorage.clear();
-        modal.innerHTML = `
-            <div class="bg-[#191919] rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto relative">
-                <button id="closeBoxModal" class="absolute top-4 right-4 text-gray-400 hover:text-white text-xl">&times;</button>
-                
-                <h3 class="text-xl font-bold text-white mb-4">提示</h3>
-                
-                <div class="mb-4">
-                    <div class="text-sm font-medium text-gray-300 mb-4">页面缓存已清除，3 秒后自动刷新本页面。</div>
-                </div>
-            </div>`;
-        setTimeout(() => {
-            window.location.reload();
-        }, 3000);
+        window.location.reload();
     });
 
     // 添加事件监听器 - 取消按钮

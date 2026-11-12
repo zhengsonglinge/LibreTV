@@ -9,7 +9,7 @@
 
     <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
     <link rel="stylesheet" href="css/styles.css?v=20261112sources1">
-    <link rel="stylesheet" href="css/player.css?v=20261112sources1">
+    <link rel="stylesheet" href="css/player.css?v=20261112playerui1">
 </head>
 <body class="player-page">
     <header class="player-header">
@@ -23,9 +23,6 @@
             <div class="player-heading">
                 <span class="player-kicker">正在播放</span>
                 <h1 id="videoTitle" class="player-title custom-title-scroll"></h1>
-            </div>
-            <div id="sourceBadge" class="source-chip" hidden>
-                <span id="sourceName">公开片源</span>
             </div>
         </div>
     </header>
@@ -62,62 +59,91 @@
                 </div>
                 </div>
 
-                <div class="player-controls">
-                    <button onclick="playPreviousEpisode()" id="prevButton" class="player-nav-button" aria-label="上一集">
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 19l-7-7 7-7"></path>
-                        </svg>
-                        <span>上一集</span>
-                    </button>
-                    <div class="episode-position">
-                        <span id="episodeInfo">加载中...</span>
-                        <span class="episode-position-divider" aria-hidden="true"></span>
-                        <span id="episodePositionSummary">正在读取剧集</span>
+                <div class="player-console">
+                    <div class="player-controls">
+                        <button onclick="playPreviousEpisode()" id="prevButton" class="player-nav-button" aria-label="上一集">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 19l-7-7 7-7"></path>
+                            </svg>
+                            <span>上一集</span>
+                        </button>
+                        <div class="episode-position">
+                            <span id="episodeInfo">加载中...</span>
+                            <span class="episode-position-divider" aria-hidden="true"></span>
+                            <span id="episodePositionSummary">正在读取剧集</span>
+                        </div>
+                        <button onclick="playNextEpisode()" id="nextButton" class="player-nav-button" aria-label="下一集">
+                            <span>下一集</span>
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                        </button>
                     </div>
-                    <button onclick="playNextEpisode()" id="nextButton" class="player-nav-button" aria-label="下一集">
-                        <span>下一集</span>
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 5l7 7-7 7"></path>
-                        </svg>
-                    </button>
-                </div>
 
-                <div class="player-options-bar">
-                    <label class="autoplay-control">
-                        <span>自动连播</span>
-                        <span class="switch">
-                            <input type="checkbox" id="autoplayToggle">
-                            <span class="slider"></span>
-                        </span>
-                    </label>
-                    <div class="player-option-actions">
-                        <button onclick="toggleEpisodeOrder()" class="player-tool-button">
-                            <svg xmlns="http://www.w3.org/2000/svg" id="orderIcon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 9.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z" clip-rule="evenodd" />
-                            </svg>
-                            <span id="orderText">倒序排列</span>
-                        </button>
-                        <button id="lockToggle" onclick="toggleControlsLock()" title="锁定控制" aria-label="锁定播放器控制" class="player-icon-button">
-                            <svg id="lockIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M15 11V7a3 3 0 00-6 0v4m-3 4h12v6H6v-6z" />
-                            </svg>
-                        </button>
+                    <div class="player-options-bar">
+                        <label class="autoplay-control">
+                            <span>自动连播</span>
+                            <span class="switch">
+                                <input type="checkbox" id="autoplayToggle">
+                                <span class="slider"></span>
+                            </span>
+                        </label>
+                        <div class="player-option-actions">
+                            <button onclick="toggleEpisodeOrder()" class="player-tool-button">
+                                <svg xmlns="http://www.w3.org/2000/svg" id="orderIcon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 9.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z" clip-rule="evenodd" />
+                                </svg>
+                                <span id="orderText">倒序排列</span>
+                            </button>
+                            <button id="lockToggle" onclick="toggleControlsLock()" title="锁定控制" aria-label="锁定播放器控制" class="player-icon-button">
+                                <svg id="lockIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M15 11V7a3 3 0 00-6 0v4m-3 4h12v6H6v-6z" />
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </section>
 
-            <section class="episodes-section" aria-labelledby="episodesTitle">
-                <div class="episodes-heading">
-                    <div>
-                        <span class="player-kicker">Episodes</span>
-                        <h2 id="episodesTitle">选集</h2>
-                    </div>
-                    <p id="episodeCountLabel" class="episode-count">正在读取剧集</p>
+            <section class="player-library-section" aria-label="播放内容">
+                <div class="player-library-tabs" role="tablist" aria-label="播放内容切换">
+                    <button id="episodesTab" type="button" class="player-library-tab is-active"
+                            role="tab" aria-selected="true" aria-controls="episodesPanel"
+                            onclick="showPlayerTab('episodes')">
+                        <span class="player-library-tab-label">选集</span>
+                        <span id="episodeCountLabel" class="player-library-tab-meta">正在读取剧集</span>
+                    </button>
+                    <button id="sourcesTab" type="button" class="player-library-tab"
+                            role="tab" aria-selected="false" aria-controls="sourceSwitchPanel"
+                            onclick="openSourceSwitcher()">
+                        <span class="player-library-tab-label">切换片源</span>
+                        <span id="sourceTabMeta" class="player-library-tab-meta">公开片源</span>
+                    </button>
                 </div>
-                <div class="episode-grid" id="episodesGrid">
-                    <div class="episodes-list" id="episodesList">
-                        <div class="episodes-empty">正在加载剧集...</div>
+
+                <div id="episodesPanel" class="player-library-panel" role="tabpanel" aria-labelledby="episodesTab">
+                    <div class="episode-grid" id="episodesGrid">
+                        <div class="episodes-list" id="episodesList">
+                            <div class="episodes-empty">正在加载剧集...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="sourceSwitchPanel" class="player-library-panel source-switch-panel"
+                     role="tabpanel" aria-labelledby="sourcesTab" hidden>
+                    <div class="source-switch-header">
+                        <div>
+                            <span class="player-kicker">Sources</span>
+                            <h2 id="sourceSwitchTitle">可切换片源</h2>
+                            <p id="sourceSwitchDescription">正在查找同一影片的其他片源…</p>
+                        </div>
+                    </div>
+                    <div id="sourceSwitchList" class="source-switch-list" aria-live="polite">
+                        <div class="source-switch-loading">
+                            <div class="loading-spinner"></div>
+                            <span>正在搜索可用片源…</span>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -142,8 +168,9 @@
     <script src="libs/hls.min.js?v=20261112sources1" crossorigin="anonymous"></script>
     <script src="libs/DPlayer.min.js?v=20261112sources1" crossorigin="anonymous"></script>
 
-    <script src="js/config.js?v=20261112sources1"></script>
+    <script src="js/config.js?v=20261112playercache1"></script>
     <script src="js/password.js?v=20261112sources1"></script>
+    <script src="js/api.js?v=20261112sourceswitch1"></script>
 
     <script>
         // 创建全局环境变量对象
@@ -161,6 +188,22 @@
         let currentEpisodeIndex = 0;
         let currentEpisodes = [];
         let episodesReversed = false;
+        let currentSourceCode = '';
+        let currentSourceName = '';
+        let sourceOptionsCache = { key: '', items: null };
+        let playerSourceCandidateSnapshot = null;
+        const SOURCE_SWITCH_TIMEOUT = 8000;
+        const SOURCE_SWITCH_MIN_SCORE = 0.55;
+        let sourceSwitchRequestId = 0;
+        let sourceSwitchActionInProgress = false;
+        let sourceSwitchListState = {
+            items: [],
+            loading: false,
+            completed: false,
+            errors: 0,
+            total: 0,
+            loadingCount: 0
+        };
         let dp = null;
         let currentHls = null; // 跟踪当前HLS实例
         let autoplayEnabled = true; // 默认开启自动连播
@@ -222,7 +265,11 @@
             try {
                 if (episodesList) {
                     // 如果URL中有集数数据，优先使用它
-                    currentEpisodes = JSON.parse(decodeURIComponent(episodesList));
+                    try {
+                        currentEpisodes = JSON.parse(episodesList);
+                    } catch {
+                        currentEpisodes = JSON.parse(decodeURIComponent(episodesList));
+                    }
                     console.log('从URL恢复集数信息:', currentEpisodes.length);
                 } else {
                     // 否则从localStorage获取
@@ -266,9 +313,11 @@
             const sourceLabel = sourceName
                 || (sourceCode && API_SITES[sourceCode]?.name)
                 || (sourceCode === 'custom' ? '自定义片源' : '');
+            currentSourceCode = sourceCode || '';
+            currentSourceName = sourceLabel || '公开片源';
+            playerSourceCandidateSnapshot = readPlayerSourceCandidateSnapshot(currentVideoTitle);
             if (sourceLabel) {
-                document.getElementById('sourceName').textContent = sourceLabel;
-                document.getElementById('sourceBadge').hidden = false;
+                document.getElementById('sourceTabMeta').textContent = sourceLabel;
             }
 
             // 初始化播放器
@@ -346,8 +395,558 @@
             }, 200);
         }
 
+        // 获取已保存的自定义片源
+        function getStoredCustomApis() {
+            try {
+                const customApis = JSON.parse(localStorage.getItem('customAPIs') || '[]');
+                return Array.isArray(customApis) ? customApis : [];
+            } catch (error) {
+                console.warn('读取自定义片源失败:', error);
+                return [];
+            }
+        }
+
+        function readPlayerSourceCandidateSnapshot(title) {
+            try {
+                const cacheConfig = PLAYER_SOURCE_CACHE_CONFIG;
+                const rawSnapshot = sessionStorage.getItem(cacheConfig.storageKey);
+                if (!rawSnapshot) return null;
+
+                const snapshot = JSON.parse(rawSnapshot);
+                if (
+                    snapshot.version !== cacheConfig.version ||
+                    !Array.isArray(snapshot.items) ||
+                    Date.now() - Number(snapshot.timestamp || 0) > cacheConfig.maxAge ||
+                    normalizeSwitchTitle(snapshot.title) !== normalizeSwitchTitle(title)
+                ) {
+                    return null;
+                }
+
+                return {
+                    title: snapshot.title,
+                    timestamp: snapshot.timestamp,
+                    items: snapshot.items.filter(item =>
+                        item &&
+                        typeof item.source_code === 'string' &&
+                        item.source_code
+                    )
+                };
+            } catch (error) {
+                console.warn('读取主页片源结果失败:', error);
+                return null;
+            }
+        }
+
+        // 将片源标识转换为播放页可用的配置
+        function resolveSwitchSource(sourceId, customApis) {
+            if (typeof sourceId !== 'string') return null;
+
+            if (sourceId.startsWith('custom_')) {
+                const customIndex = Number.parseInt(sourceId.slice('custom_'.length), 10);
+                const customApi = customApis[customIndex];
+                if (!customApi || customApi.isAdult || !customApi.url) return null;
+                return {
+                    sourceId,
+                    sourceName: customApi.name || `自定义片源 ${customIndex + 1}`,
+                    apiUrl: customApi.url,
+                    isCustom: true
+                };
+            }
+
+            const site = API_SITES[sourceId];
+            if (!site || site.adult) return null;
+            return {
+                sourceId,
+                sourceName: site.name,
+                apiUrl: site.api,
+                isCustom: false
+            };
+        }
+
+        // 读取设置中的片源；没有有效设置时回退到全部非成人片源
+        function getSwitchSources() {
+            const customApis = getStoredCustomApis();
+            let selectedIds = [];
+
+            try {
+                const storedSelection = JSON.parse(localStorage.getItem('selectedAPIs') || '[]');
+                if (Array.isArray(storedSelection)) {
+                    selectedIds = storedSelection;
+                }
+            } catch (error) {
+                console.warn('读取片源设置失败，将使用全部片源:', error);
+            }
+
+            if (selectedIds.length === 0) {
+                selectedIds = [
+                    ...Object.keys(API_SITES).filter(sourceId => !API_SITES[sourceId].adult),
+                    ...customApis.map((_, index) => `custom_${index}`)
+                ];
+            }
+
+            const seen = new Set();
+            return selectedIds
+                .map(sourceId => resolveSwitchSource(sourceId, customApis))
+                .filter(source => {
+                    if (!source || seen.has(source.sourceId)) return false;
+                    seen.add(source.sourceId);
+                    return source.sourceId !== currentSourceCode;
+                });
+        }
+
+        function normalizeSwitchTitle(value) {
+            return String(value || '')
+                .normalize('NFKC')
+                .toLocaleLowerCase('zh-CN')
+                .replace(/[^\p{L}\p{N}]+/gu, '');
+        }
+
+        function getSwitchBigrams(value) {
+            if (!value) return [];
+            if (value.length === 1) return [value];
+
+            const bigrams = [];
+            for (let index = 0; index < value.length - 1; index += 1) {
+                bigrams.push(value.slice(index, index + 2));
+            }
+            return bigrams;
+        }
+
+        function calculateSwitchDiceSimilarity(left, right) {
+            if (!left || !right) return 0;
+            if (left === right) return 1;
+
+            const leftBigrams = getSwitchBigrams(left);
+            const rightBigrams = getSwitchBigrams(right);
+            if (leftBigrams.length === 0 || rightBigrams.length === 0) return 0;
+
+            const counts = new Map();
+            leftBigrams.forEach(bigram => {
+                counts.set(bigram, (counts.get(bigram) || 0) + 1);
+            });
+
+            let overlap = 0;
+            rightBigrams.forEach(bigram => {
+                const count = counts.get(bigram) || 0;
+                if (count > 0) {
+                    overlap += 1;
+                    counts.set(bigram, count - 1);
+                }
+            });
+
+            return (2 * overlap) / (leftBigrams.length + rightBigrams.length);
+        }
+
+        function calculateSwitchTitleScore(query, title) {
+            const normalizedQuery = normalizeSwitchTitle(query);
+            const normalizedTitle = normalizeSwitchTitle(title);
+            if (!normalizedQuery || !normalizedTitle) return 0;
+            if (normalizedQuery === normalizedTitle) return 1;
+            if (normalizedTitle.startsWith(normalizedQuery)) return 0.92;
+            if (normalizedTitle.includes(normalizedQuery)) return 0.84;
+            if (normalizedQuery.includes(normalizedTitle) && normalizedTitle.length >= 2) {
+                return 0.76;
+            }
+            return calculateSwitchDiceSimilarity(normalizedQuery, normalizedTitle) * 0.7;
+        }
+
+        async function fetchSourceSwitchJson(url) {
+            const controller = new AbortController();
+            let timeoutId = null;
+
+            const request = fetch(url, { signal: controller.signal })
+                .then(async response => {
+                    if (!response.ok) {
+                        throw new Error(`请求失败（HTTP ${response.status}）`);
+                    }
+                    const data = await response.json();
+                    if (data && typeof data.code === 'number' && data.code >= 400) {
+                        throw new Error(data.msg || '片源返回错误');
+                    }
+                    return data || {};
+                });
+
+            const timeout = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => {
+                    controller.abort();
+                    reject(new Error('片源请求超时'));
+                }, SOURCE_SWITCH_TIMEOUT);
+            });
+
+            try {
+                return await Promise.race([request, timeout]);
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
+        function buildSourceSwitchApiParams(source, query, detailId = '') {
+            const params = new URLSearchParams();
+            if (detailId) {
+                params.set('id', detailId);
+            } else {
+                params.set('wd', query);
+            }
+            params.set('source', source.isCustom ? 'custom' : source.sourceId);
+            if (source.isCustom) {
+                params.set('customApi', source.apiUrl);
+            }
+            return params;
+        }
+
+        async function fetchPlayableSourceDetail(source, vodId, requestId) {
+            const detailParams = buildSourceSwitchApiParams(source, '', vodId);
+            const detailData = await fetchSourceSwitchJson(`/api/detail?${detailParams.toString()}`);
+            if (requestId !== sourceSwitchRequestId) return null;
+
+            const episodes = (Array.isArray(detailData.episodes) ? detailData.episodes : [])
+                .filter(url => typeof url === 'string' && /^https?:\/\//.test(url));
+            if (episodes.length === 0) return null;
+
+            return {
+                ...source,
+                matchedTitle: detailData.videoInfo?.title || currentVideoTitle,
+                score: 1,
+                episodes
+            };
+        }
+
+        async function findPlayableSource(source, requestId) {
+            if (playerSourceCandidateSnapshot) {
+                const candidate = playerSourceCandidateSnapshot.items
+                    .find(item => item.source_code === source.sourceId);
+                if (!candidate) return null;
+
+                const cachedEpisodes = (Array.isArray(candidate.episodes) ? candidate.episodes : [])
+                    .filter(url => typeof url === 'string' && /^https?:\/\//.test(url));
+                if (cachedEpisodes.length > 0) {
+                    return {
+                        ...source,
+                        matchedTitle: candidate.vod_name || currentVideoTitle,
+                        score: calculateSwitchTitleScore(currentVideoTitle, candidate.vod_name),
+                        episodes: cachedEpisodes
+                    };
+                }
+
+                if (!candidate.vod_id) return null;
+                return fetchPlayableSourceDetail(source, candidate.vod_id, requestId);
+            }
+
+            const searchParams = buildSourceSwitchApiParams(source, currentVideoTitle);
+            const searchData = await fetchSourceSwitchJson(`/api/search?${searchParams.toString()}`);
+            if (requestId !== sourceSwitchRequestId) return null;
+
+            const candidates = (Array.isArray(searchData.list) ? searchData.list : [])
+                .map(item => ({
+                    item,
+                    score: calculateSwitchTitleScore(currentVideoTitle, item.vod_name)
+                }))
+                .filter(candidate => candidate.score >= SOURCE_SWITCH_MIN_SCORE)
+                .sort((left, right) => right.score - left.score);
+
+            if (candidates.length === 0) return null;
+
+            const matched = candidates[0];
+            const vodId = String(matched.item.vod_id || '').trim();
+            if (!vodId) return null;
+
+            const playableSource = await fetchPlayableSourceDetail(source, vodId, requestId);
+            if (!playableSource) return null;
+            return {
+                ...playableSource,
+                matchedTitle: matched.item.vod_name || playableSource.matchedTitle,
+                score: matched.score
+            };
+        }
+
+        function getCurrentSourceSwitchItem() {
+            return {
+                sourceId: currentSourceCode || 'current',
+                sourceName: currentSourceName || '当前片源',
+                matchedTitle: currentVideoTitle,
+                episodes: currentEpisodes,
+                isCurrent: true
+            };
+        }
+
+        function createSourceSwitchItem(item) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'source-switch-item';
+            if (item.isCurrent) {
+                button.classList.add('is-current');
+                button.disabled = true;
+            }
+
+            const main = document.createElement('span');
+            main.className = 'source-switch-item-main';
+
+            const name = document.createElement('span');
+            name.className = 'source-switch-name';
+            name.textContent = item.sourceName;
+
+            const meta = document.createElement('span');
+            meta.className = 'source-switch-meta';
+            const episodeCount = Array.isArray(item.episodes) ? item.episodes.length : 0;
+            if (item.isCurrent) {
+                meta.textContent = `正在播放 · 共 ${episodeCount} 集`;
+            } else if (item.matchedTitle && normalizeSwitchTitle(item.matchedTitle) !== normalizeSwitchTitle(currentVideoTitle)) {
+                meta.textContent = `匹配「${item.matchedTitle}」 · 共 ${episodeCount} 集`;
+            } else {
+                meta.textContent = `共 ${episodeCount} 集`;
+            }
+
+            const state = document.createElement('span');
+            state.className = 'source-switch-state';
+            state.textContent = item.isCurrent ? '当前片源' : '切换';
+
+            main.append(name, meta);
+            button.append(main, state);
+
+            if (!item.isCurrent) {
+                button.addEventListener('click', () => switchPlayerSource(item));
+            }
+
+            return button;
+        }
+
+        function renderSourceSwitchList() {
+            const list = document.getElementById('sourceSwitchList');
+            const description = document.getElementById('sourceSwitchDescription');
+            if (!list) return;
+
+            const currentItem = getCurrentSourceSwitchItem();
+            const otherItems = sourceSwitchListState.items
+                .filter(item => item.sourceId !== currentSourceCode);
+            list.replaceChildren(createSourceSwitchItem(currentItem));
+
+            otherItems.forEach(item => {
+                list.appendChild(createSourceSwitchItem(item));
+            });
+
+            if (sourceSwitchListState.loading) {
+                const progress = document.createElement('div');
+                progress.className = 'source-switch-progress';
+                progress.innerHTML = '<span class="loading-spinner"></span><span>正在检查更多片源…</span>';
+                list.appendChild(progress);
+            }
+
+            if (!sourceSwitchListState.loading && otherItems.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'source-switch-empty';
+                empty.textContent = sourceSwitchListState.errors > 0
+                    ? '暂未找到其他可播放片源，请稍后重试'
+                    : '暂未找到其他可播放片源';
+                list.appendChild(empty);
+            }
+
+            if (description) {
+                if (sourceSwitchListState.loading) {
+                    description.textContent = otherItems.length > 0
+                        ? `已找到 ${otherItems.length} 个可切换片源，正在继续检查…`
+                        : playerSourceCandidateSnapshot
+                            ? '正在读取主页搜索到的片源…'
+                            : '正在查找同一影片的其他片源…';
+                } else {
+                    description.textContent = otherItems.length > 0
+                        ? playerSourceCandidateSnapshot
+                            ? `已复用主页结果 · ${otherItems.length} 个可播放片源`
+                            : `找到 ${otherItems.length} 个可播放片源`
+                        : playerSourceCandidateSnapshot
+                            ? '主页搜索结果中没有其他可播放片源'
+                            : '当前片源可能已经是唯一可用来源';
+                }
+            }
+        }
+
+        async function loadSourceSwitchOptions(requestId, cacheKey, sources) {
+            const items = [];
+            let checked = 0;
+            let errors = 0;
+
+            sourceSwitchListState = {
+                items,
+                loading: true,
+                completed: false,
+                errors,
+                total: sources.length,
+                loadingCount: sources.length
+            };
+            renderSourceSwitchList();
+
+            const tasks = sources.map(async source => {
+                try {
+                    const item = await findPlayableSource(source, requestId);
+                    if (requestId !== sourceSwitchRequestId) return;
+                    if (item) {
+                        items.push(item);
+                        items.sort((left, right) =>
+                            right.score - left.score ||
+                            left.sourceName.localeCompare(right.sourceName, 'zh-CN')
+                        );
+                    }
+                } catch (error) {
+                    if (requestId === sourceSwitchRequestId) {
+                        errors += 1;
+                        console.warn(`片源 ${source.sourceName} 切换检测失败:`, error);
+                    }
+                } finally {
+                    if (requestId !== sourceSwitchRequestId) return;
+                    checked += 1;
+                    sourceSwitchListState = {
+                        items,
+                        loading: true,
+                        completed: false,
+                        errors,
+                        total: sources.length,
+                        loadingCount: sources.length - checked
+                    };
+                    renderSourceSwitchList();
+                }
+            });
+
+            await Promise.allSettled(tasks);
+            if (requestId !== sourceSwitchRequestId) return;
+
+            sourceSwitchListState = {
+                items,
+                loading: false,
+                completed: true,
+                errors,
+                total: sources.length,
+                loadingCount: 0
+            };
+            sourceOptionsCache = { key: cacheKey, items: [...items] };
+            renderSourceSwitchList();
+        }
+
+        function showPlayerTab(tabName) {
+            const episodesTab = document.getElementById('episodesTab');
+            const sourcesTab = document.getElementById('sourcesTab');
+            const episodesPanel = document.getElementById('episodesPanel');
+            const sourceSwitchPanel = document.getElementById('sourceSwitchPanel');
+            const showSources = tabName === 'sources';
+
+            episodesTab.classList.toggle('is-active', !showSources);
+            sourcesTab.classList.toggle('is-active', showSources);
+            episodesTab.setAttribute('aria-selected', String(!showSources));
+            sourcesTab.setAttribute('aria-selected', String(showSources));
+            episodesPanel.hidden = showSources;
+            sourceSwitchPanel.hidden = !showSources;
+        }
+
+        function openSourceSwitcher() {
+            if (!currentVideoTitle || currentVideoTitle === '未知视频') {
+                showToast('暂时无法获取影片标题', 'error');
+                return;
+            }
+
+            showPlayerTab('sources');
+            document.getElementById('sourcesTab').focus();
+            if (sourceSwitchListState.loading) return;
+
+            const sources = getSwitchSources();
+            const cacheKey = JSON.stringify({
+                title: currentVideoTitle,
+                sources: sources.map(source => `${source.sourceId}:${source.apiUrl}`)
+            });
+
+            sourceSwitchRequestId += 1;
+            const requestId = sourceSwitchRequestId;
+
+            if (sourceOptionsCache.key === cacheKey && Array.isArray(sourceOptionsCache.items)) {
+                sourceSwitchListState = {
+                    items: [...sourceOptionsCache.items],
+                    loading: false,
+                    completed: true,
+                    errors: 0,
+                    total: sources.length,
+                    loadingCount: 0
+                };
+                renderSourceSwitchList();
+            } else if (sources.length === 0) {
+                sourceSwitchListState = {
+                    items: [],
+                    loading: false,
+                    completed: true,
+                    errors: 0,
+                    total: 0,
+                    loadingCount: 0
+                };
+                renderSourceSwitchList();
+                document.getElementById('sourceSwitchDescription').textContent = '没有可切换的其他片源';
+            } else {
+                loadSourceSwitchOptions(requestId, cacheKey, sources);
+            }
+        }
+
+        function closeSourceSwitcher() {
+            showPlayerTab('episodes');
+        }
+
+        function switchPlayerSource(source) {
+            if (!source || source.isCurrent || source.sourceId === currentSourceCode || sourceSwitchActionInProgress) {
+                return;
+            }
+            if (!Array.isArray(source.episodes) || source.episodes.length === 0) {
+                showToast('该片源暂无可播放剧集', 'error');
+                return;
+            }
+
+            sourceSwitchActionInProgress = true;
+            saveCurrentProgress();
+
+            const nextEpisodes = [...source.episodes];
+            const nextIndex = Math.min(currentEpisodeIndex, nextEpisodes.length - 1);
+            currentEpisodes = nextEpisodes;
+            currentEpisodeIndex = nextIndex;
+            currentSourceCode = source.sourceId;
+            currentSourceName = source.sourceName;
+
+            try {
+                localStorage.setItem('currentEpisodes', JSON.stringify(currentEpisodes));
+                localStorage.setItem('currentEpisodeIndex', String(currentEpisodeIndex));
+            } catch (error) {
+                console.warn('保存切换后的剧集信息失败:', error);
+            }
+
+            const nextUrl = new URL(window.location.href);
+            nextUrl.searchParams.set('url', currentEpisodes[nextIndex]);
+            nextUrl.searchParams.set('index', String(nextIndex));
+            nextUrl.searchParams.set('source', currentSourceName);
+            nextUrl.searchParams.set('source_code', currentSourceCode);
+            if (nextUrl.searchParams.has('episodes')) {
+                nextUrl.searchParams.set('episodes', JSON.stringify(currentEpisodes));
+            }
+            window.history.replaceState(window.history.state || {}, '', nextUrl);
+
+            document.getElementById('sourceTabMeta').textContent = currentSourceName;
+            updateEpisodeInfo();
+            updateButtonStates();
+            renderEpisodes();
+            closeSourceSwitcher();
+            playEpisode(nextIndex, {
+                url: currentEpisodes[nextIndex],
+                updateHistory: false
+            });
+            showToast(`已切换到 ${currentSourceName} · 第 ${nextIndex + 1} 集`, 'success');
+
+            window.setTimeout(() => {
+                sourceSwitchActionInProgress = false;
+            }, 500);
+        }
+
         // 处理键盘快捷键
         function handleKeyboardShortcuts(e) {
+            const sourceSwitchPanel = document.getElementById('sourceSwitchPanel');
+            if (e.key === 'Escape' && sourceSwitchPanel && !sourceSwitchPanel.hidden) {
+                closeSourceSwitcher();
+                document.getElementById('episodesTab').focus();
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+
             // 忽略输入框中的按键事件
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
