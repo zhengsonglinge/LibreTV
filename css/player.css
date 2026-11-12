@@ -57,7 +57,7 @@ input {
 
 .player-header-inner {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 18px;
     min-height: 68px;
@@ -150,6 +150,359 @@ input {
 .custom-title-scroll {
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.player-history-trigger {
+    position: relative;
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    color: var(--ink-soft);
+    background: rgba(255, 253, 250, 0.64);
+    font-size: 0.73rem;
+    font-weight: 620;
+    cursor: pointer;
+    transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+}
+
+.player-history-trigger:hover,
+.player-history-trigger[aria-expanded="true"] {
+    border-color: var(--line-strong);
+    color: var(--ink);
+    background: var(--surface);
+}
+
+.player-history-trigger:focus-visible,
+.player-history-close:focus-visible {
+    outline: 3px solid var(--accent-faint);
+    outline-offset: 2px;
+}
+
+.player-history-trigger svg {
+    width: 16px;
+    height: 16px;
+}
+
+.player-history-badge {
+    min-width: 18px;
+    padding: 2px 5px;
+    border-radius: 99px;
+    color: #fffdfa;
+    background: var(--accent);
+    font-size: 0.56rem;
+    font-weight: 720;
+    line-height: 1.35;
+    text-align: center;
+}
+
+.player-history-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 64;
+    background: rgba(28, 26, 23, 0.36);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 260ms ease;
+    backdrop-filter: blur(5px);
+}
+
+.player-history-backdrop.is-open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.player-history-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 65;
+    display: flex;
+    width: min(424px, calc(100vw - 18px));
+    flex-direction: column;
+    padding: 26px 24px 18px;
+    overflow: hidden;
+    border-left: 1px solid var(--line);
+    color: var(--ink);
+    background: #f7f5f0;
+    box-shadow: -24px 0 70px rgba(23, 22, 20, 0.18);
+    transform: translateX(102%);
+    visibility: hidden;
+    transition: transform 360ms var(--ease-out), visibility 0s linear 360ms;
+}
+
+.player-history-drawer.is-open {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform 360ms var(--ease-out), visibility 0s;
+}
+
+body.playback-history-open {
+    overflow: hidden;
+}
+
+.player-history-drawer-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+}
+
+.player-history-drawer-header .player-kicker {
+    margin-bottom: 3px;
+}
+
+.player-history-drawer-title {
+    margin: 0;
+    font-size: 1.46rem;
+    font-weight: 720;
+    letter-spacing: -0.045em;
+}
+
+.player-history-close {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    color: var(--muted);
+    background: transparent;
+    cursor: pointer;
+    transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+}
+
+.player-history-close:hover {
+    border-color: var(--line-strong);
+    color: var(--ink);
+    background: var(--surface);
+}
+
+.player-history-close svg {
+    width: 17px;
+    height: 17px;
+}
+
+.player-history-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 18px 1px 12px;
+    color: var(--muted);
+    font-size: 0.65rem;
+}
+
+.player-history-toolbar button {
+    padding: 5px 8px;
+    border: 0;
+    border-radius: 6px;
+    color: var(--muted);
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+    transition: color 180ms ease, background 180ms ease;
+}
+
+.player-history-toolbar button:hover {
+    color: #b33a28;
+    background: rgba(179, 58, 40, 0.07);
+}
+
+.player-history-list {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 8px;
+    padding: 1px 1px 18px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.player-history-empty {
+    display: flex;
+    min-height: 220px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    padding: 26px;
+    border: 1px dashed var(--line-strong);
+    border-radius: 12px;
+    color: var(--muted);
+    background: rgba(255, 253, 250, 0.34);
+    font-size: 0.74rem;
+    line-height: 1.7;
+    text-align: center;
+}
+
+.player-history-empty svg {
+    width: 26px;
+    height: 26px;
+    opacity: 0.68;
+}
+
+.player-history-item {
+    position: relative;
+    display: grid;
+    flex: none;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: rgba(255, 253, 250, 0.72);
+    transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
+}
+
+.player-history-item:hover,
+.player-history-item:focus-within {
+    border-color: var(--line-strong);
+    background: var(--surface);
+    transform: translateY(-1px);
+}
+
+.player-history-item.is-current {
+    border-color: rgba(36, 85, 245, 0.28);
+    background: var(--accent-faint);
+}
+
+.player-history-main {
+    min-width: 0;
+    padding: 13px 4px 13px 14px;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+}
+
+.player-history-main:focus-visible {
+    outline: 3px solid rgba(36, 85, 245, 0.18);
+    outline-offset: -3px;
+}
+
+.player-history-title-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+}
+
+.player-history-title {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 0.79rem;
+    font-weight: 680;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.player-history-current {
+    flex: none;
+    padding: 2px 6px;
+    border-radius: 99px;
+    color: var(--accent);
+    background: rgba(36, 85, 245, 0.09);
+    font-size: 0.55rem;
+    font-weight: 680;
+}
+
+.player-history-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 0.62rem;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+.player-history-meta span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.player-history-meta .player-history-episode {
+    flex: none;
+    color: var(--accent);
+    font-weight: 650;
+}
+
+.player-history-progress {
+    margin-top: 10px;
+}
+
+.player-history-progress-track {
+    height: 3px;
+    overflow: hidden;
+    border-radius: 99px;
+    background: rgba(23, 22, 20, 0.09);
+}
+
+.player-history-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+}
+
+.player-history-progress-label {
+    margin-top: 5px;
+    color: #9e978d;
+    font-size: 0.57rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.player-history-delete {
+    align-self: start;
+    margin: 9px 8px 0 0;
+    padding: 5px;
+    border: 0;
+    border-radius: 6px;
+    color: var(--muted);
+    background: transparent;
+    opacity: 0;
+    cursor: pointer;
+    transition: color 160ms ease, background 160ms ease, opacity 160ms ease;
+}
+
+.player-history-item:hover .player-history-delete,
+.player-history-item:focus-within .player-history-delete {
+    opacity: 1;
+}
+
+.player-history-delete:hover {
+    color: #b33a28;
+    background: rgba(179, 58, 40, 0.08);
+}
+
+.player-history-delete svg {
+    width: 14px;
+    height: 14px;
+}
+
+.player-history-footer {
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    color: #9e978d;
+    font-size: 0.58rem;
+    line-height: 1.5;
+    text-align: center;
 }
 
 .player-main {
@@ -1061,6 +1414,34 @@ input {
 
     .player-back span {
         display: none;
+    }
+
+    .player-history-trigger {
+        width: 38px;
+        padding: 0;
+    }
+
+    .player-history-trigger > span:not(.player-history-badge) {
+        display: none;
+    }
+
+    .player-history-badge {
+        position: absolute;
+        top: -3px;
+        right: -3px;
+        min-width: 16px;
+        padding: 1px 4px;
+        border: 2px solid var(--canvas);
+        font-size: 0.5rem;
+    }
+
+    .player-history-drawer {
+        width: calc(100vw - 10px);
+        padding: 22px 18px 15px;
+    }
+
+    .player-history-delete {
+        opacity: 0.72;
     }
 
     .player-brand {

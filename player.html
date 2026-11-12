@@ -12,7 +12,7 @@
 
     <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
     <link rel="stylesheet" href="css/styles.css?v=20261113sourcenetwork2">
-    <link rel="stylesheet" href="css/player.css?v=20261113logo1">
+    <link rel="stylesheet" href="css/player.css?v=20261113history1">
 </head>
 <body class="player-page">
     <header class="player-header">
@@ -32,6 +32,16 @@
                 <span class="player-kicker">正在播放</span>
                 <h1 id="videoTitle" class="player-title custom-title-scroll"></h1>
             </div>
+            <button id="playbackHistoryToggle" class="player-history-trigger" type="button"
+                    aria-label="播放历史" aria-controls="playbackHistoryDrawer" aria-expanded="false"
+                    onclick="togglePlaybackHistory(event)">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+                          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span>播放历史</span>
+                <span id="playbackHistoryBadge" class="player-history-badge" hidden>0</span>
+            </button>
         </div>
     </header>
 
@@ -50,6 +60,33 @@
             </div>
         </div>
     </div>
+
+    <div id="playbackHistoryBackdrop" class="player-history-backdrop"
+         aria-hidden="true" onclick="closePlaybackHistory()"></div>
+    <aside id="playbackHistoryDrawer" class="player-history-drawer"
+           aria-labelledby="playbackHistoryHeading" aria-hidden="true" inert>
+        <div class="player-history-drawer-header">
+            <div>
+                <span class="player-kicker">History</span>
+                <h2 id="playbackHistoryHeading" class="player-history-drawer-title">播放历史</h2>
+            </div>
+            <button type="button" class="player-history-close" aria-label="关闭播放历史"
+                    onclick="closePlaybackHistory()">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+                          d="M6 6l12 12M18 6L6 18"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="player-history-toolbar">
+            <span id="playbackHistoryCount">0 条记录</span>
+            <button type="button" onclick="clearPlaybackHistory()">清空历史</button>
+        </div>
+        <div id="playbackHistoryList" class="player-history-list" aria-live="polite">
+            <div class="player-history-empty">正在读取播放历史…</div>
+        </div>
+        <div class="player-history-footer">播放记录仅保存在当前浏览器，最多保留 50 条</div>
+    </aside>
 
     <main class="player-main">
         <div class="player-shell">
@@ -244,6 +281,7 @@
         let playbackRestoreTimer = null;
         let playbackRestoreCleanup = null;
         let episodePlaybackRequestId = 0;
+        let playbackHistoryOpen = false;
         const sharePlaybackUrlCache = new Map();
         const DIRECT_MEDIA_PATH_PATTERN = /\.(?:m3u8|mp4|m4v|webm|ogv|ogg|mov|flv|mkv|ts)$/i;
 
@@ -279,6 +317,12 @@
             event.preventDefault();
             event.stopImmediatePropagation();
             closeQualityMenu(true);
+        });
+
+        document.addEventListener('keydown', function(event) {
+            if (!playbackHistoryOpen || event.key !== 'Escape') return;
+            event.preventDefault();
+            closePlaybackHistory();
         });
 
         // 初始化页面内容
@@ -366,8 +410,25 @@
             currentSourceName = sourceLabel || '公开片源';
             loadSelectedSourceHistory();
             playerSourceCandidateSnapshot = readPlayerSourceCandidateSnapshot(currentVideoTitle);
+
+            let resumePosition = initialPosition;
+            let resumeDuration = 0;
+            if (!(resumePosition > 0) && videoUrl) {
+                const savedProgress = readSavedPlaybackProgress(currentVideoTitle, currentEpisodeIndex);
+                if (savedProgress && savedProgress.position >= 10) {
+                    const savedDuration = Number(savedProgress.duration);
+                    const nearEnd = Number.isFinite(savedDuration)
+                        && savedDuration > 0
+                        && savedProgress.position >= savedDuration * 0.95;
+                    if (!nearEnd) {
+                        resumePosition = savedProgress.position;
+                        resumeDuration = Number.isFinite(savedDuration) ? savedDuration : 0;
+                    }
+                }
+            }
+
             updateCurrentHistoryState(
-                initialPosition,
+                resumePosition,
                 null,
                 videoUrl || currentEpisodes[currentEpisodeIndex] || ''
             );
@@ -393,11 +454,12 @@
                     initPlayer(playableVideoUrl, sourceCode);
                 }
                 
-                // 尝试从URL参数中恢复播放位置
-                if (initialPosition > 0) {
-                    restorePlaybackPosition(initialPosition, {
+                // 从URL参数或本地上次进度恢复播放位置
+                if (resumePosition > 0) {
+                    restorePlaybackPosition(resumePosition, {
                         index: currentEpisodeIndex,
-                        url: videoUrl
+                        url: videoUrl,
+                        expectedDuration: resumeDuration
                     });
                 }
             } else {
@@ -409,6 +471,7 @@
             
             // 渲染集数列表
             renderEpisodes();
+            renderPlaybackHistory();
             
             // 更新按钮状态
             updateButtonStates();
@@ -1070,10 +1133,13 @@
             }
 
             sourceSwitchActionInProgress = true;
+            const switchPosition = dp && dp.video ? Number(dp.video.currentTime) : 0;
+            const switchDuration = dp && dp.video ? Number(dp.video.duration) : 0;
             saveCurrentProgress();
 
             const nextEpisodes = [...source.episodes];
             const nextIndex = Math.min(currentEpisodeIndex, nextEpisodes.length - 1);
+            const restoreSourcePosition = nextIndex === currentEpisodeIndex && switchPosition >= 1;
             rememberSelectedSource(currentSourceCode);
             rememberSelectedSource(source.sourceId);
             currentEpisodes = nextEpisodes;
@@ -1106,7 +1172,10 @@
             playEpisode(nextIndex, {
                 url: currentEpisodes[nextIndex],
                 updateHistory: false,
-                saveProgress: false
+                saveProgress: false,
+                restorePosition: restoreSourcePosition,
+                position: switchPosition,
+                expectedDuration: switchDuration
             });
             showToast(`已切换到 ${currentSourceName} · 第 ${nextIndex + 1} 集`, 'success');
 
@@ -1923,7 +1992,11 @@
                 if (options.restorePosition) {
                     restorePlaybackPosition(
                         options.position ?? getSavedPlaybackPosition(currentVideoTitle, index),
-                        { index: index, url: requestedUrl }
+                        {
+                            index: index,
+                            url: requestedUrl,
+                            expectedDuration: options.expectedDuration
+                        }
                     );
                 }
 
@@ -1952,7 +2025,11 @@
                 if (options.restorePosition) {
                     restorePlaybackPosition(
                         options.position ?? getSavedPlaybackPosition(currentVideoTitle, index),
-                        { index: index, url: requestedUrl }
+                        {
+                            index: index,
+                            url: requestedUrl,
+                            expectedDuration: options.expectedDuration
+                        }
                     );
                 }
             }
@@ -2021,15 +2098,28 @@
                 && Number.isFinite(Number(historyState.playbackPosition))
                 ? Number(historyState.playbackPosition)
                 : null;
-            const savedPosition = statePosition > 1
-                ? statePosition
-                : getSavedPlaybackPosition(currentVideoTitle, index);
+            let expectedDuration = historyState
+                && historyState.episodeIndex === index
+                && Number.isFinite(Number(historyState.duration))
+                ? Number(historyState.duration)
+                : 0;
+            let savedPosition = statePosition > 1 ? statePosition : 0;
+            if (!(savedPosition > 1)) {
+                const savedProgress = readSavedPlaybackProgress(currentVideoTitle, index);
+                if (savedProgress) {
+                    savedPosition = savedProgress.position;
+                    if (!(expectedDuration > 0)) {
+                        expectedDuration = savedProgress.duration;
+                    }
+                }
+            }
             playEpisode(index, {
                 url: resolvedUrl,
                 updateHistory: false,
                 saveProgress: false,
                 restorePosition: true,
-                position: savedPosition
+                position: savedPosition,
+                expectedDuration: expectedDuration
             });
         }
 
@@ -2475,6 +2565,7 @@
                 url: `player.html?title=${encodeURIComponent(currentVideoTitle)}&source=${encodeURIComponent(sourceName)}&source_code=${encodeURIComponent(sourceCode)}`,
                 episodeIndex: currentEpisodeIndex,
                 sourceName: sourceName,
+                sourceCode: sourceCode,
                 timestamp: Date.now(),
                 // 添加播放进度信息
                 playbackPosition: currentPosition > 10 ? currentPosition : 0,
@@ -2498,7 +2589,8 @@
                         // 存在则更新现有记录的集数、时间戳和URL
                         history[existingIndex].episodeIndex = currentEpisodeIndex;
                         history[existingIndex].timestamp = Date.now();
-                        history[existingIndex].sourceName = sourceName
+                        history[existingIndex].sourceName = sourceName;
+                        history[existingIndex].sourceCode = sourceCode || history[existingIndex].sourceCode || '';
                         // 更新播放进度信息
                         history[existingIndex].playbackPosition = currentPosition > 10 ? currentPosition : history[existingIndex].playbackPosition;
                         history[existingIndex].duration = videoDuration || history[existingIndex].duration;
@@ -2532,6 +2624,325 @@
                 } catch (e) {
                     console.error('保存观看历史失败:', e);
                 }
+            }
+            renderPlaybackHistory();
+        }
+
+        function readPlaybackHistory() {
+            try {
+                const records = JSON.parse(localStorage.getItem('viewingHistory') || '[]');
+                if (!Array.isArray(records)) return [];
+                return records
+                    .filter(item => item && typeof item.title === 'string' && item.title.trim())
+                    .slice(0, 50);
+            } catch (error) {
+                console.warn('读取播放历史失败:', error);
+                return [];
+            }
+        }
+
+        function formatPlaybackHistoryTime(seconds) {
+            const total = Number(seconds);
+            if (!Number.isFinite(total) || total <= 0) return '00:00';
+
+            const hours = Math.floor(total / 3600);
+            const minutes = Math.floor((total % 3600) / 60);
+            const remainingSeconds = Math.floor(total % 60);
+            if (hours > 0) {
+                return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+            }
+            return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+        }
+
+        function formatPlaybackHistoryDate(timestamp) {
+            const time = Number(timestamp);
+            if (!Number.isFinite(time) || time <= 0) return '';
+
+            const diff = Math.max(0, Date.now() - time);
+            if (diff < 60 * 1000) return '刚刚';
+            if (diff < 60 * 60 * 1000) return `${Math.floor(diff / (60 * 1000))} 分钟前`;
+            if (diff < 24 * 60 * 60 * 1000) return `${Math.floor(diff / (60 * 60 * 1000))} 小时前`;
+            if (diff < 7 * 24 * 60 * 60 * 1000) return `${Math.floor(diff / (24 * 60 * 60 * 1000))} 天前`;
+
+            const date = new Date(time);
+            return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        }
+
+        function createPlaybackHistoryEmpty(message) {
+            const empty = document.createElement('div');
+            empty.className = 'player-history-empty';
+            empty.innerHTML = `
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"
+                          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span>${message}</span>
+            `;
+            return empty;
+        }
+
+        function renderPlaybackHistory() {
+            const list = document.getElementById('playbackHistoryList');
+            const countLabel = document.getElementById('playbackHistoryCount');
+            const badge = document.getElementById('playbackHistoryBadge');
+            if (!list || !countLabel || !badge) return;
+
+            const records = readPlaybackHistory();
+            countLabel.textContent = `${records.length} 条记录`;
+            badge.textContent = records.length > 99 ? '99+' : String(records.length);
+            badge.hidden = records.length === 0;
+            list.replaceChildren();
+
+            if (records.length === 0) {
+                list.appendChild(createPlaybackHistoryEmpty('暂无播放记录，开始播放后会显示在这里'));
+                return;
+            }
+
+            records.forEach(record => {
+                const title = String(record.title);
+                const episodeIndex = Number.isFinite(Number(record.episodeIndex))
+                    ? Math.max(0, Number(record.episodeIndex))
+                    : 0;
+                const isCurrent = title === currentVideoTitle && episodeIndex === currentEpisodeIndex;
+                const item = document.createElement('article');
+                item.className = `player-history-item${isCurrent ? ' is-current' : ''}`;
+
+                const main = document.createElement('button');
+                main.type = 'button';
+                main.className = 'player-history-main';
+                main.setAttribute('aria-label', `继续播放 ${title} 第 ${episodeIndex + 1} 集`);
+                main.addEventListener('click', () => openPlaybackHistoryEntry(record));
+
+                const titleRow = document.createElement('div');
+                titleRow.className = 'player-history-title-row';
+                const titleElement = document.createElement('span');
+                titleElement.className = 'player-history-title';
+                titleElement.textContent = title;
+                titleRow.appendChild(titleElement);
+                if (isCurrent) {
+                    const currentLabel = document.createElement('span');
+                    currentLabel.className = 'player-history-current';
+                    currentLabel.textContent = '正在播放';
+                    titleRow.appendChild(currentLabel);
+                }
+
+                const meta = document.createElement('div');
+                meta.className = 'player-history-meta';
+                const episode = document.createElement('span');
+                episode.className = 'player-history-episode';
+                episode.textContent = `第 ${episodeIndex + 1} 集`;
+                meta.appendChild(episode);
+
+                const metaSeparator = document.createElement('span');
+                metaSeparator.textContent = '·';
+                metaSeparator.setAttribute('aria-hidden', 'true');
+                meta.appendChild(metaSeparator);
+
+                const source = document.createElement('span');
+                source.textContent = String(record.sourceName || '未知来源');
+                meta.appendChild(source);
+
+                const recordDate = formatPlaybackHistoryDate(record.timestamp);
+                if (recordDate) {
+                    const dateSeparator = document.createElement('span');
+                    dateSeparator.textContent = '·';
+                    dateSeparator.setAttribute('aria-hidden', 'true');
+                    meta.appendChild(dateSeparator);
+                    const date = document.createElement('span');
+                    date.textContent = recordDate;
+                    meta.appendChild(date);
+                }
+
+                main.append(titleRow, meta);
+
+                const position = Number(record.playbackPosition);
+                const duration = Number(record.duration);
+                if (Number.isFinite(position) && position > 0) {
+                    const progress = document.createElement('div');
+                    progress.className = 'player-history-progress';
+                    const track = document.createElement('div');
+                    track.className = 'player-history-progress-track';
+                    const fill = document.createElement('div');
+                    fill.className = 'player-history-progress-fill';
+                    const percent = Number.isFinite(duration) && duration > 0
+                        ? Math.min(100, Math.max(0, (position / duration) * 100))
+                        : 0;
+                    fill.style.width = `${percent}%`;
+                    track.appendChild(fill);
+                    const label = document.createElement('div');
+                    label.className = 'player-history-progress-label';
+                    label.textContent = Number.isFinite(duration) && duration > 0
+                        ? `${formatPlaybackHistoryTime(position)} / ${formatPlaybackHistoryTime(duration)}`
+                        : `已观看 ${formatPlaybackHistoryTime(position)}`;
+                    progress.append(track, label);
+                    main.appendChild(progress);
+                }
+
+                const deleteButton = document.createElement('button');
+                deleteButton.type = 'button';
+                deleteButton.className = 'player-history-delete';
+                deleteButton.title = '删除记录';
+                deleteButton.setAttribute('aria-label', `删除 ${title} 的播放记录`);
+                deleteButton.innerHTML = `
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+                              d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                `;
+                deleteButton.addEventListener('click', event => {
+                    event.stopPropagation();
+                    deletePlaybackHistoryEntry(record);
+                });
+
+                item.append(main, deleteButton);
+                list.appendChild(item);
+            });
+        }
+
+        function togglePlaybackHistory(event) {
+            if (event) event.stopPropagation();
+            if (playbackHistoryOpen) {
+                closePlaybackHistory();
+            } else {
+                openPlaybackHistory();
+            }
+        }
+
+        function openPlaybackHistory() {
+            saveCurrentProgress({ updateHistoryState: false });
+            renderPlaybackHistory();
+            playbackHistoryOpen = true;
+
+            document.body.classList.add('playback-history-open');
+            document.getElementById('playbackHistoryBackdrop').classList.add('is-open');
+            document.getElementById('playbackHistoryBackdrop').setAttribute('aria-hidden', 'false');
+            document.getElementById('playbackHistoryDrawer').classList.add('is-open');
+            document.getElementById('playbackHistoryDrawer').setAttribute('aria-hidden', 'false');
+            document.getElementById('playbackHistoryDrawer').inert = false;
+            document.getElementById('playbackHistoryToggle').setAttribute('aria-expanded', 'true');
+
+            window.requestAnimationFrame(() => {
+                document.querySelector('#playbackHistoryDrawer .player-history-close')?.focus();
+            });
+        }
+
+        function closePlaybackHistory(options = {}) {
+            if (!playbackHistoryOpen) return;
+            playbackHistoryOpen = false;
+
+            document.body.classList.remove('playback-history-open');
+            document.getElementById('playbackHistoryBackdrop').classList.remove('is-open');
+            document.getElementById('playbackHistoryBackdrop').setAttribute('aria-hidden', 'true');
+            document.getElementById('playbackHistoryDrawer').classList.remove('is-open');
+            document.getElementById('playbackHistoryDrawer').setAttribute('aria-hidden', 'true');
+            document.getElementById('playbackHistoryDrawer').inert = true;
+            document.getElementById('playbackHistoryToggle').setAttribute('aria-expanded', 'false');
+
+            if (options.restoreFocus !== false) {
+                document.getElementById('playbackHistoryToggle').focus();
+            }
+        }
+
+        function buildPlaybackHistoryUrl(record) {
+            const rawUrl = String(record.url || '').trim();
+            if (!rawUrl) return '';
+
+            let target;
+            try {
+                const candidate = new URL(rawUrl, window.location.href);
+                const isPlayerPage = candidate.origin === window.location.origin
+                    && /\/player\.html$/i.test(candidate.pathname);
+
+                if (isPlayerPage) {
+                    target = candidate;
+                } else if (/^https?:\/\//i.test(rawUrl)) {
+                    target = new URL('player.html', window.location.origin);
+                    target.searchParams.set('url', rawUrl);
+                } else {
+                    return '';
+                }
+            } catch (error) {
+                console.warn('构建播放历史地址失败:', error);
+                return '';
+            }
+
+            target.searchParams.set('title', String(record.title || '未知视频'));
+            const episodeIndex = Number.isFinite(Number(record.episodeIndex))
+                ? Math.max(0, Number(record.episodeIndex))
+                : 0;
+            target.searchParams.set('index', String(episodeIndex));
+
+            if (record.sourceName) {
+                target.searchParams.set('source', String(record.sourceName));
+            }
+            if (record.sourceCode) {
+                target.searchParams.set('source_code', String(record.sourceCode));
+            }
+            if (Array.isArray(record.episodes) && record.episodes.length > 0) {
+                target.searchParams.set('episodes', JSON.stringify(record.episodes));
+            }
+
+            target.searchParams.delete('position');
+            const position = Number(record.playbackPosition);
+            const duration = Number(record.duration);
+            const nearEnd = Number.isFinite(duration) && duration > 0 && position >= duration * 0.95;
+            if (Number.isFinite(position) && position > 10 && !nearEnd) {
+                target.searchParams.set('position', String(Math.floor(position)));
+            }
+
+            return target.href;
+        }
+
+        function openPlaybackHistoryEntry(record) {
+            const targetUrl = buildPlaybackHistoryUrl(record);
+            if (!targetUrl) {
+                showToast('该历史记录缺少有效的播放地址', 'error');
+                return;
+            }
+
+            const episodeIndex = Number.isFinite(Number(record.episodeIndex))
+                ? Math.max(0, Number(record.episodeIndex))
+                : 0;
+            if (record.title === currentVideoTitle && episodeIndex === currentEpisodeIndex) {
+                closePlaybackHistory();
+                showToast('正在播放该内容', 'success');
+                return;
+            }
+
+            saveCurrentProgress({ updateHistoryState: false });
+            closePlaybackHistory({ restoreFocus: false });
+            window.location.href = targetUrl;
+        }
+
+        function deletePlaybackHistoryEntry(record) {
+            try {
+                const records = readPlaybackHistory();
+                const recordIndex = records.findIndex(item =>
+                    item.title === record.title
+                    && Number(item.episodeIndex || 0) === Number(record.episodeIndex || 0)
+                    && Number(item.timestamp || 0) === Number(record.timestamp || 0)
+                );
+                if (recordIndex === -1) return;
+
+                records.splice(recordIndex, 1);
+                localStorage.setItem('viewingHistory', JSON.stringify(records));
+                renderPlaybackHistory();
+                showToast('已删除该播放记录', 'success');
+            } catch (error) {
+                console.error('删除播放历史失败:', error);
+                showToast('删除播放记录失败', 'error');
+            }
+        }
+
+        function clearPlaybackHistory() {
+            if (readPlaybackHistory().length === 0) return;
+            try {
+                localStorage.removeItem('viewingHistory');
+                renderPlaybackHistory();
+                showToast('播放历史已清空', 'success');
+            } catch (error) {
+                console.error('清空播放历史失败:', error);
+                showToast('清空播放历史失败', 'error');
             }
         }
 
@@ -2601,21 +3012,31 @@
             window.history.replaceState(nextState, '', window.location.href);
         }
 
-        function getSavedPlaybackPosition(title, index) {
+        function readSavedPlaybackProgress(title, index) {
             try {
                 const key = `videoProgress_${encodeURIComponent(title)}_${index}`;
                 const saved = JSON.parse(localStorage.getItem(key) || 'null');
                 const position = Number(saved && saved.position);
                 const duration = Number(saved && saved.duration);
-                if (!Number.isFinite(position) || position < 1) return 0;
+                if (!Number.isFinite(position) || position < 1) return null;
                 if (Number.isFinite(duration) && duration > 0 && position >= duration - 1) {
-                    return 0;
+                    return null;
                 }
-                return position;
+                return {
+                    position: position,
+                    duration: Number.isFinite(duration) && duration > 0 ? duration : 0,
+                    sourceCode: saved && typeof saved.sourceCode === 'string' ? saved.sourceCode : '',
+                    timestamp: Number(saved && saved.timestamp) || 0
+                };
             } catch (error) {
                 console.warn('读取剧集播放进度失败:', error);
-                return 0;
+                return null;
             }
+        }
+
+        function getSavedPlaybackPosition(title, index) {
+            const savedProgress = readSavedPlaybackProgress(title, index);
+            return savedProgress ? savedProgress.position : 0;
         }
 
         function cancelPlaybackRestore() {
@@ -2635,6 +3056,7 @@
             const resumePosition = Number(position);
             const targetIndex = Number.isInteger(context.index) ? context.index : currentEpisodeIndex;
             const targetUrl = context.url || currentEpisodes[targetIndex] || '';
+            const expectedDuration = Number(context.expectedDuration);
             if (!Number.isFinite(resumePosition) || resumePosition < 1 || !dp || !dp.video) return;
 
             cancelPlaybackRestore();
@@ -2709,6 +3131,17 @@
                     scheduleRestore(400);
                     return;
                 }
+                if (Number.isFinite(expectedDuration) && expectedDuration > 0) {
+                    const durationTolerance = Math.max(30, expectedDuration * 0.05);
+                    if (Math.abs(duration - expectedDuration) > durationTolerance) {
+                        console.warn('片源时长差异过大，已取消自动续播', {
+                            expectedDuration: expectedDuration,
+                            currentDuration: duration
+                        });
+                        cleanup();
+                        return;
+                    }
+                }
                 if (resumePosition >= duration - 1) {
                     cleanup();
                     return;
@@ -2771,6 +3204,7 @@
             const progressData = {
                 position: currentTime,
                 duration: duration,
+                sourceCode: currentSourceCode || '',
                 timestamp: Date.now()
             };
             try {
