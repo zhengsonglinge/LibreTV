@@ -1508,6 +1508,8 @@
 
             player = videojs(videoElement, {
                 controls: true,
+                // 无操作后隐藏控制条 / 进度条：600ms 触发 + 150ms 淡出，保证 1s 内彻底消失
+                inactivityTimeout: 600,
                 autoplay: false,
                 preload: 'auto',
                 loop: false,
@@ -1767,6 +1769,10 @@
                 }
             }
             if (playbackHistoryOpen) return;
+
+            // 快捷键也算用户活动，顺便把已隐藏的控制条唤回来
+            player.userActive(true);
+            player.reportUserActivity();
 
             const key = event.key;
             const step = 5;

@@ -596,6 +596,14 @@ body.playback-history-open {
     font-size: 0.72rem;
 }
 
+/* 无操作后快速收起控制条：播放中与暂停时都隐藏（播完 vjs-ended 时保留） */
+#player.vjs-has-started.vjs-user-inactive:not(.vjs-ended) .vjs-control-bar {
+    visibility: visible;
+    opacity: 0;
+    pointer-events: none;
+    transition: visibility 150ms, opacity 150ms;
+}
+
 #player .vjs-play-progress,
 #player .vjs-volume-level {
     background-color: #2455f5;
