@@ -1384,6 +1384,94 @@
             }
         }
 
+        function isAppleMobileDevice() {
+            const userAgent = navigator.userAgent || '';
+            const iPadDesktopMode = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+            return /iPad|iPhone|iPod/i.test(userAgent) || iPadDesktopMode;
+        }
+
+        function isSafariBrowser() {
+            const userAgent = navigator.userAgent || '';
+            return /Safari\//i.test(userAgent)
+                && !/(?:Chrome|CriOS|Chromium|Edg|EdgiOS|OPR|Firefox|FxiOS)\//i.test(userAgent);
+        }
+
+        function supportsNativeHlsPlayback() {
+            const video = document.createElement('video');
+            return Boolean(
+                video.canPlayType('application/vnd.apple.mpegurl')
+                || video.canPlayType('application/x-mpegURL')
+            );
+        }
+
+        function shouldPreferNativeHls() {
+            return supportsNativeHlsPlayback() && (isAppleMobileDevice() || isSafariBrowser());
+        }
+
+        function isHlsJsSupported() {
+            try {
+                return typeof Hls !== 'undefined' && Hls.isSupported();
+            } catch (error) {
+                console.warn('检测 Hls.js 支持失败:', error);
+                return false;
+            }
+        }
+
+        function detectVideoPlaybackKind(url) {
+            let decodedUrl = String(url || '');
+            try {
+                decodedUrl = decodeURIComponent(decodedUrl);
+            } catch (error) {
+                // 保留原始地址继续判断
+            }
+
+            const path = decodedUrl.split(/[?#]/, 1)[0].toLowerCase();
+            if (/\.m3u8$/i.test(path)) return 'hls';
+            if (/\.(?:mp4|m4v|mov|webm|ogv|ogg)$/i.test(path)) return 'video';
+            return 'hls';
+        }
+
+        function getVideoPlaybackPlan(url) {
+            const kind = detectVideoPlaybackKind(url);
+            if (kind === 'video') {
+                return { engine: 'native', type: 'normal', unsupported: false };
+            }
+            if (shouldPreferNativeHls()) {
+                return { engine: 'native-hls', type: 'hls', unsupported: false };
+            }
+            if (isHlsJsSupported()) {
+                return { engine: 'hls.js', type: 'hls', unsupported: false };
+            }
+            if (supportsNativeHlsPlayback()) {
+                return { engine: 'native-hls', type: 'hls', unsupported: false };
+            }
+            return { engine: 'unsupported', type: 'normal', unsupported: true };
+        }
+
+        function setPlayerPlaybackEngine(engine) {
+            const container = document.getElementById('playerContainer');
+            if (container) {
+                container.dataset.playbackEngine = engine || '';
+            }
+        }
+
+        function getPlayerPlaybackEngine() {
+            const container = document.getElementById('playerContainer');
+            return container ? container.dataset.playbackEngine || '' : '';
+        }
+
+        function arePlaybackEnginesCompatible(currentEngine, nextEngine) {
+            if (currentEngine === nextEngine) return true;
+            const nativeEngines = new Set(['native', 'native-hls']);
+            return nativeEngines.has(currentEngine) && nativeEngines.has(nextEngine);
+        }
+
+        function handleBlockedPlayback(error) {
+            if (!error || error.name !== 'NotAllowedError') return false;
+            showToast('视频已加载，请点击播放按钮开始播放', 'success');
+            return true;
+        }
+
         // 初始化播放器
         function initPlayer(videoUrl, sourceCode) {
             resetPlayerQuality();
@@ -1392,6 +1480,14 @@
                 showError('播放地址无效，请重新选择片源或剧集');
                 return;
             }
+
+            const playbackPlan = getVideoPlaybackPlan(videoUrl);
+            if (playbackPlan.unsupported) {
+                showError('当前浏览器不支持该视频格式，请切换其他片源');
+                return;
+            }
+            setPlayerPlaybackEngine(playbackPlan.engine);
+            const useHlsJs = playbackPlan.engine === 'hls.js';
 
             // 配置HLS.js选项
             const hlsConfig = {
@@ -1425,7 +1521,7 @@
             // 创建DPlayer实例
             dp = new DPlayer({
                 container: document.getElementById('player'),
-                autoplay: true,
+                autoplay: !isAppleMobileDevice(),
                 theme: '#2455f5',
                 preload: 'auto',
                 loop: false,
@@ -1439,8 +1535,8 @@
                 chromecast: true,                // 启用Chromecast投屏功能
                 video: {
                     url: videoUrl,
-                    type: 'hls',
-                    customType: {
+                    type: playbackPlan.type,
+                    customType: useHlsJs ? {
                         hls: function(video, player) {
                             resetPlayerQuality();
 
@@ -1466,6 +1562,7 @@
                             // 限制启动阶段的自动恢复次数，避免源失效时无限重试
                             let networkRecoveryCount = 0;
                             let mediaRecoveryCount = 0;
+                            let nativeFallbackAttempted = false;
                             let playbackNoticeCleanupTimer = null;
 
                             function clearStalePlaybackNotice() {
@@ -1510,11 +1607,63 @@
                             
                             // enable airplay, from https://github.com/video-dev/hls.js/issues/5989
                             video.disableRemotePlayback = false;
+
+                            function tryNativeHlsFallback() {
+                                if (nativeFallbackAttempted || !supportsNativeHlsPlayback()) {
+                                    return false;
+                                }
+
+                                nativeFallbackAttempted = true;
+                                const fallbackUrl = hls.url || videoUrl;
+                                console.warn('Hls.js 播放失败，尝试切换为设备原生 HLS:', fallbackUrl);
+
+                                try {
+                                    hls.destroy();
+                                    if (currentHls === hls) {
+                                        currentHls = null;
+                                    }
+
+                                    video.pause();
+                                    video.removeAttribute('src');
+                                    video.src = fallbackUrl;
+                                    video.load();
+                                    video.disableRemotePlayback = false;
+
+                                    if (dp && dp.options && dp.options.video) {
+                                        dp.options.video.url = fallbackUrl;
+                                    }
+
+                                    resetPlayerQuality();
+                                    setPlayerPlaybackEngine('native-hls');
+                                    document.getElementById('error').style.display = 'none';
+                                    document.getElementById('loading').style.display = 'flex';
+                                    document.getElementById('loading').innerHTML = `
+                                        <div class="loading-spinner"></div>
+                                        <div>正在切换为设备原生播放…</div>
+                                    `;
+
+                                    const playPromise = video.play();
+                                    if (playPromise && typeof playPromise.catch === 'function') {
+                                        playPromise.catch(error => {
+                                            if (!handleBlockedPlayback(error)) {
+                                                console.warn('原生 HLS 自动播放失败:', error);
+                                            }
+                                        });
+                                    }
+                                    showToast('已自动切换为设备原生播放', 'success');
+                                    return true;
+                                } catch (error) {
+                                    console.error('切换设备原生 HLS 失败:', error);
+                                    return false;
+                                }
+                            }
                             
                             hls.on(Hls.Events.MANIFEST_PARSED, function() {
                                 syncPlayerQuality(hls, video);
                                 video.play().catch(e => {
-                                    console.warn('自动播放被阻止:', e);
+                                    if (!handleBlockedPlayback(e)) {
+                                        console.warn('自动播放失败:', e);
+                                    }
                                 });
                             });
 
@@ -1549,8 +1698,12 @@
                                 // 如果是致命错误，且视频未播放
                                 if (data.fatal && !playbackStarted) {
                                     console.error('致命HLS错误:', data);
+                                    if (nativeFallbackAttempted) return;
 
                                     const responseCode = Number(data.response && data.response.code) || 0;
+                                    if (responseCode < 400 && tryNativeHlsFallback()) {
+                                        return;
+                                    }
                                     if (responseCode >= 400) {
                                         showError(`片源不可用（HTTP ${responseCode}），请切换其他来源`);
                                         hls.destroy();
@@ -1616,7 +1769,7 @@
                                 document.getElementById('loading').style.display = 'none';
                             });
                         }
-                    }
+                    } : undefined
             }
             });
             const originalNotice = dp.notice.bind(dp);
@@ -1958,6 +2111,12 @@
                 if (requestId !== episodePlaybackRequestId) return;
             }
 
+            const playbackPlan = getVideoPlaybackPlan(url);
+            if (playbackPlan.unsupported) {
+                showError('当前浏览器不支持该视频格式，请切换其他片源');
+                return;
+            }
+
             // 取消上一集尚未完成的恢复，避免旧回调影响新剧集
             cancelPlaybackRestore();
             playerTransitionInProgress = true;
@@ -1988,7 +2147,11 @@
             }
             
             // 更新播放器
-            if (dp) {
+            const canReusePlayer = dp && arePlaybackEnginesCompatible(
+                getPlayerPlaybackEngine(),
+                playbackPlan.engine
+            );
+            if (canReusePlayer) {
                 if (options.restorePosition) {
                     restorePlaybackPosition(
                         options.position ?? getSavedPlaybackPosition(currentVideoTitle, index),
@@ -2001,26 +2164,36 @@
                 }
 
                 try {
+                    if (dp.options && dp.options.video && playbackPlan.engine !== 'hls.js') {
+                        dp.options.video.customType = undefined;
+                        resetPlayerQuality();
+                    }
                     dp.switchVideo({
                         url: url,
-                        type: 'hls'
+                        type: playbackPlan.type
                     });
+                    setPlayerPlaybackEngine(playbackPlan.engine);
                     
                     // 确保播放开始
                     const playPromise = dp.play();
-                    if (playPromise !== undefined) {
+                    if (playPromise && typeof playPromise.catch === 'function') {
                         playPromise.catch(error => {
-                            console.warn('播放失败，尝试重新初始化:', error);
-                            // 如果切换视频失败，重新初始化播放器
-                            initPlayer(url, sourceCode);
+                            if (handleBlockedPlayback(error) || error.name === 'AbortError') return;
+                            console.warn('播放启动失败:', error);
                         });
                     }
                 } catch (e) {
                     console.error('切换视频出错，尝试重新初始化:', e);
-                    // 如果出错，重新初始化播放器
                     initPlayer(url, sourceCode);
                 }
             } else {
+                if (dp && dp.video) {
+                    try {
+                        dp.pause();
+                    } catch (error) {
+                        console.warn('停止旧播放器失败:', error);
+                    }
+                }
                 initPlayer(url, sourceCode);
                 if (options.restorePosition) {
                     restorePlaybackPosition(
