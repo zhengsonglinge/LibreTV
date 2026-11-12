@@ -3,271 +3,124 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LibreTV 播放器</title>
+    <title>视频播放器</title>
 
-    <!-- Favicon -->
-    <link rel="icon" href="https://images.icon-icons.com/38/PNG/512/retrotv_5520.png">
-    <link rel="apple-touch-icon" href="https://images.icon-icons.com/38/PNG/512/retrotv_5520.png">
     <link rel="manifest" href="manifest.json">
 
-    <script src="libs/tailwindcss.min.js"></script>
-    <link rel="stylesheet" href="css/styles.css">
-    <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            background-color: #0f1622;
-            color: white;
-        }
-        .player-container {
-            width: 100%;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        #player {
-            width: 100%;
-            height: 60vh; /* 视频播放器高度 */
-        }
-        .loading-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background-color: rgba(0, 0, 0, 0.7);
-            color: white;
-            z-index: 100;
-            flex-direction: column;
-        }
-        .loading-spinner {
-            width: 50px;
-            height: 50px;
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            border-top-color: white;
-            animation: spin 1s ease-in-out infinite;
-            margin-bottom: 10px;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        .error-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            background-color: rgba(0, 0, 0, 0.7);
-            color: white;
-            z-index: 100;
-            flex-direction: column;
-            text-align: center;
-            padding: 1rem;
-        }
-        .error-icon {
-            font-size: 48px;
-            margin-bottom: 10px;
-        }
-        .episode-active {
-            background-color: #3b82f6 !important;
-            border-color: #60a5fa !important;
-        }
-        .episode-grid {
-            max-height: 30vh;
-            overflow-y: auto;
-            padding: 1rem 0;
-        }
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 46px;
-            height: 24px;
-        }
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #333;
-            transition: .4s;
-            border-radius: 24px;
-        }
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 18px;
-            width: 18px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
-        }
-        input:checked + .slider {
-            background-color: #00ccff;
-        }
-        input:checked + .slider:before {
-            transform: translateX(22px);
-        }
-        /* 添加快捷键提示样式 */
-        .shortcut-hint {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background-color: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 1rem 2rem;
-            border-radius: 0.5rem;
-            font-size: 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            z-index: 1000;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-        .shortcut-hint.show {
-            opacity: 1;
-        }
-
-        /* 原生全屏时，播放器容器铺满 */
-        .player-container:-webkit-full-screen,
-        .player-container:fullscreen {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100vw; height: 100vh;
-            z-index: 10000;
-            background-color: #000;
-        }
-        .player-container:-webkit-full-screen #player,
-        .player-container:fullscreen #player {
-            width: 100%; height: 100%;
-        }
-    </style>
+    <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
+    <link rel="stylesheet" href="css/styles.css?v=20261112sources1">
+    <link rel="stylesheet" href="css/player.css?v=20261112sources1">
 </head>
-<body>
-    <header class="bg-[#111] p-4 flex items-center border-b border-[#333] gap-2 player-header">
-        <div class="flex items-center min-w-0">
-            <a href="/" class="flex items-center min-w-0">
-                <svg class="w-8 h-8 mr-2 text-[#00ccff] logo-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+<body class="player-page">
+    <header class="player-header">
+        <div class="player-shell player-header-inner">
+            <a href="/" class="player-back" aria-label="返回首页">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m15 18-6-6 6-6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
                 </svg>
-                <h1 class="text-xl font-bold gradient-text logo-text">LibreTV</h1>
+                <span>返回首页</span>
             </a>
+            <div class="player-heading">
+                <span class="player-kicker">正在播放</span>
+                <h1 id="videoTitle" class="player-title custom-title-scroll"></h1>
+            </div>
+            <div id="sourceBadge" class="source-chip" hidden>
+                <span id="sourceName">公开片源</span>
+            </div>
         </div>
-        <h2 id="videoTitle" class="text-xl font-semibold flex-1 text-center overflow-x-auto whitespace-nowrap truncate custom-title-scroll"></h2>
-        <a href="/" class="px-4 py-2 bg-[#222] hover:bg-[#333] border border-[#333] rounded-lg transition-colors flex items-center min-w-0 home-btn">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M19 21V9.5l-7-5-7 5V21a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2z" />
-              <path d="M9 22V12h6v10" />
-            </svg>
-            <span class="home-btn-text">返回首页</span>
-        </a>
     </header>
 
     <!-- 密码验证弹窗 -->
-    <div id="passwordModal" class="fixed inset-0 bg-black/95 hidden items-center justify-center z-[65] transition-opacity duration-300">
-        <div class="bg-[#111] p-8 rounded-lg w-11/12 max-w-md border border-[#333] max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center mb-6 flex-none">
-                <h2 class="text-2xl font-bold gradient-text">访问验证</h2>
-            </div>
-            <div class="mb-6">
-                <p class="text-gray-300 mb-4">请输入密码继续访问</p>
+    <div id="passwordModal" class="player-modal">
+        <div class="player-modal-panel">
+            <div>
+                <h2>访问验证</h2>
+                <p>请输入播放密码后继续。</p>
                 <form id="passwordForm" onsubmit="handlePasswordSubmit(); return false;">
                     <input type="text" name="username" id="username" autocomplete="username" style="display:none" tabindex="-1" aria-hidden="true">
-                    <input type="password" id="passwordInput" class="w-full bg-[#111] border border-[#333] text-white px-4 py-3 rounded-lg focus:outline-none focus:border-white transition-colors" placeholder="密码..." autocomplete="new-password">
-                    <button id="passwordSubmitBtn" type="submit" class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">提交</button>
+                    <input type="password" id="passwordInput" placeholder="输入密码" autocomplete="new-password">
+                    <button id="passwordSubmitBtn" type="submit">继续播放</button>
                 </form>
-                <p id="passwordError" class="text-red-500 mt-2 hidden">密码错误，请重试</p>
+                <p id="passwordError" class="player-modal-error hidden">密码错误，请重试</p>
             </div>
         </div>
     </div>
 
-    <main class="container mx-auto px-4 py-4">
-        <!-- 视频播放区 -->
-        <div id="playerContainer" class="player-container">
-            <div class="relative">
+    <main class="player-main">
+        <div class="player-shell">
+            <section class="player-watch" aria-label="视频播放">
+                <div id="playerContainer" class="player-container">
                 <div id="player"></div>
                 <div class="loading-container" id="loading">
                     <div class="loading-spinner"></div>
-                    <div>正在加载视频...</div>
+                    <div>正在连接片源</div>
                 </div>
                 <div class="error-container" id="error">
-                    <div class="error-icon">⚠️</div>
+                    <div class="error-icon">!</div>
                     <div id="error-message">视频加载失败</div>
-                    <div style="margin-top: 10px; font-size: 14px; color: #aaa;">请尝试其他视频源或稍后重试</div>
+                    <div class="error-help">请尝试其他视频源或稍后重试</div>
                 </div>
-            </div>
-        </div>
-
-        <!-- 集数导航 -->
-        <div class="player-container">
-            <div class="flex justify-between items-center my-4">
-                <button onclick="playPreviousEpisode()" id="prevButton" class="px-4 py-2 bg-[#222] hover:bg-[#333] border border-[#333] rounded-lg transition-colors">
-                    <svg class="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-                    </svg>
-                    上一集
-                </button>
-                <span class="text-gray-400" id="episodeInfo">加载中...</span>
-                <button onclick="playNextEpisode()" id="nextButton" class="px-4 py-2 bg-[#222] hover:bg-[#333] border border-[#333] rounded-lg transition-colors">
-                    下一集
-                    <svg class="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                    </svg>
-                </button>
-            </div>
-        </div>
-
-        <!-- 添加自动播放开关和排序按钮 -->
-        <div class="player-container">
-            <div class="flex justify-end items-center mb-4 gap-2">
-                <span class="text-gray-400 text-sm">自动连播</span>
-                <label class="switch">
-                    <input type="checkbox" id="autoplayToggle">
-                    <span class="slider"></span>
-                </label>
-                <button onclick="toggleEpisodeOrder()" class="ml-4 px-4 py-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold rounded-full shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center space-x-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" id="orderIcon" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 9.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z" clip-rule="evenodd" />
-                    </svg>
-                    <span id="orderText">倒序排列</span>
-                </button>
-                <button id="lockToggle" onclick="toggleControlsLock()" title="锁定控制" 
-                        class="px-2 py-1 bg-[#333] hover:bg-[#444] text-white rounded-full transition">
-                    <svg id="lockIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <!-- 默认状态：未锁图标 -->
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M15 11V7a3 3 0 00-6 0v4m-3 4h12v6H6v-6z" />
-                    </svg>
-                </button>
-            </div>
-        </div>
-
-        <!-- 集数网格 -->
-        <div class="player-container">
-            <div class="episode-grid" id="episodesGrid">
-                <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2" id="episodesList">
-                    <!-- 集数将在这里动态加载 -->
-                    <div class="col-span-full text-center text-gray-400 py-8">加载中...</div>
                 </div>
-            </div>
+
+                <div class="player-controls">
+                    <button onclick="playPreviousEpisode()" id="prevButton" class="player-nav-button" aria-label="上一集">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 19l-7-7 7-7"></path>
+                        </svg>
+                        <span>上一集</span>
+                    </button>
+                    <div class="episode-position">
+                        <span id="episodeInfo">加载中...</span>
+                        <span class="episode-position-divider" aria-hidden="true"></span>
+                        <span id="episodePositionSummary">正在读取剧集</span>
+                    </div>
+                    <button onclick="playNextEpisode()" id="nextButton" class="player-nav-button" aria-label="下一集">
+                        <span>下一集</span>
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 5l7 7-7 7"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="player-options-bar">
+                    <label class="autoplay-control">
+                        <span>自动连播</span>
+                        <span class="switch">
+                            <input type="checkbox" id="autoplayToggle">
+                            <span class="slider"></span>
+                        </span>
+                    </label>
+                    <div class="player-option-actions">
+                        <button onclick="toggleEpisodeOrder()" class="player-tool-button">
+                            <svg xmlns="http://www.w3.org/2000/svg" id="orderIcon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 9.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z" clip-rule="evenodd" />
+                            </svg>
+                            <span id="orderText">倒序排列</span>
+                        </button>
+                        <button id="lockToggle" onclick="toggleControlsLock()" title="锁定控制" aria-label="锁定播放器控制" class="player-icon-button">
+                            <svg id="lockIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M15 11V7a3 3 0 00-6 0v4m-3 4h12v6H6v-6z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="episodes-section" aria-labelledby="episodesTitle">
+                <div class="episodes-heading">
+                    <div>
+                        <span class="player-kicker">Episodes</span>
+                        <h2 id="episodesTitle">选集</h2>
+                    </div>
+                    <p id="episodeCountLabel" class="episode-count">正在读取剧集</p>
+                </div>
+                <div class="episode-grid" id="episodesGrid">
+                    <div class="episodes-list" id="episodesList">
+                        <div class="episodes-empty">正在加载剧集...</div>
+                    </div>
+                </div>
+            </section>
         </div>
     </main>
 
@@ -280,17 +133,17 @@
     </div>
 
     <!-- 引入纯 JS sha256（HTTP 下依然可用） -->
-    <script src="libs/sha256.min.js"></script>
+    <script src="libs/sha256.min.js?v=20261112sources1"></script>
     <script>
         // 保存原始 js‑sha256 实现，避免被 password.js 覆盖
         window._jsSha256 = window.sha256;
     </script>
     
-    <script src="libs/hls.min.js" crossorigin="anonymous"></script>
-    <script src="libs/DPlayer.min.js" crossorigin="anonymous"></script>
+    <script src="libs/hls.min.js?v=20261112sources1" crossorigin="anonymous"></script>
+    <script src="libs/DPlayer.min.js?v=20261112sources1" crossorigin="anonymous"></script>
 
-    <script src="js/config.js"></script>
-    <script src="js/password.js"></script>
+    <script src="js/config.js?v=20261112sources1"></script>
+    <script src="js/password.js?v=20261112sources1"></script>
 
     <script>
         // 创建全局环境变量对象
@@ -332,7 +185,7 @@
 
         // 监听密码验证成功事件
         document.addEventListener('passwordVerified', () => {
-            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loading').style.display = 'flex';
 
             initializePageContent();
         });
@@ -344,6 +197,7 @@
             const videoUrl = urlParams.get('url');
             const title = urlParams.get('title');
             const sourceCode = urlParams.get('source_code');
+            const sourceName = urlParams.get('source');
             let index = parseInt(urlParams.get('index') || '0');
             const episodesList = urlParams.get('episodes'); // 新增：从URL获取集数信息
 
@@ -405,8 +259,17 @@
             }
 
             // 设置页面标题
-            document.title = currentVideoTitle + ' - LibreTV播放器';
+            document.title = currentVideoTitle + ' - 视频播放器';
             document.getElementById('videoTitle').textContent = currentVideoTitle;
+            document.getElementById('videoTitle').title = currentVideoTitle;
+
+            const sourceLabel = sourceName
+                || (sourceCode && API_SITES[sourceCode]?.name)
+                || (sourceCode === 'custom' ? '自定义片源' : '');
+            if (sourceLabel) {
+                document.getElementById('sourceName').textContent = sourceLabel;
+                document.getElementById('sourceBadge').hidden = false;
+            }
 
             // 初始化播放器
             if (videoUrl) {
@@ -448,6 +311,9 @@
 
             // 添加键盘快捷键事件监听
             document.addEventListener('keydown', handleKeyboardShortcuts);
+
+            // 添加浏览器前进/后退监听
+            window.addEventListener('popstate', handleHistoryNavigation);
 
             // 添加页面离开事件监听，保存播放位置
             window.addEventListener('beforeunload', saveCurrentProgress);
@@ -570,7 +436,7 @@
             dp = new DPlayer({
                 container: document.getElementById('player'),
                 autoplay: true,
-                theme: '#00ccff',
+                theme: '#2455f5',
                 preload: 'auto',
                 loop: false,
                 lang: 'zh-cn',
@@ -581,22 +447,9 @@
                 preventClickToggle: false,       // 允许点击视频切换播放/暂停
                 airplay: true,                   // 在Safari中启用AirPlay功能
                 chromecast: true,                // 启用Chromecast投屏功能
-                contextmenu: [                   // 自定义右键菜单
-                    {
-                        text: '关于 LibreTV',
-                        link: 'https://github.com/bestzwei/LibreTV'
-                    },
-                    {
-                        text: '问题反馈',
-                        click: (player) => {
-                            window.open('https://github.com/bestzwei/LibreTV/issues', '_blank');
-                        }
-                    }
-                ],
                 video: {
                     url: videoUrl,
                     type: 'hls',
-                    pic: 'image/nomedia.png', // 设置视频封面图
                     customType: {
                         hls: function(video, player) {
                             // 清理之前的HLS实例
@@ -614,12 +467,13 @@
                             
                             // 跟踪是否已经显示错误
                             let errorDisplayed = false;
-                            // 跟踪是否有错误发生
-                            let errorCount = 0;
                             // 跟踪视频是否开始播放
                             let playbackStarted = false;
                             // 跟踪视频是否出现bufferAppendError
                             let bufferAppendErrorCount = 0;
+                            // 限制启动阶段的自动恢复次数，避免源失效时无限重试
+                            let networkRecoveryCount = 0;
+                            let mediaRecoveryCount = 0;
                             
                             // 监听视频播放事件
                             video.addEventListener('playing', function() {
@@ -654,9 +508,6 @@
                             hls.on(Hls.Events.ERROR, function(event, data) {
                                 console.log('HLS事件:', event, '数据:', data);
                                 
-                                // 增加错误计数
-                                errorCount++;
-                                
                                 // 处理bufferAppendError
                                 if (data.details === 'bufferAppendError') {
                                     bufferAppendErrorCount++;
@@ -677,20 +528,55 @@
                                 // 如果是致命错误，且视频未播放
                                 if (data.fatal && !playbackStarted) {
                                     console.error('致命HLS错误:', data);
-                                    
-                                    // 尝试恢复错误
+
+                                    const responseCode = Number(data.response && data.response.code) || 0;
+                                    if (responseCode >= 400) {
+                                        showError(`片源不可用（HTTP ${responseCode}），请切换其他来源`);
+                                        hls.destroy();
+                                        currentHls = null;
+                                        return;
+                                    }
+
+                                    const manifestFailed = [
+                                        'manifestLoadError',
+                                        'manifestParsingError',
+                                        'levelLoadError',
+                                        'levelParsingError'
+                                    ].includes(data.details);
+
+                                    // 清单无法加载时不再无限重试，直接提示切换片源
+                                    if (manifestFailed) {
+                                        showError('片源连接失败或格式无效，请切换其他来源');
+                                        hls.destroy();
+                                        currentHls = null;
+                                        return;
+                                    }
+
                                     switch(data.type) {
                                         case Hls.ErrorTypes.NETWORK_ERROR:
-                                            console.log("尝试恢复网络错误");
+                                            if (networkRecoveryCount >= 2) {
+                                                showError('片源网络连接失败，请检查网络或切换其他来源');
+                                                hls.destroy();
+                                                currentHls = null;
+                                                return;
+                                            }
+                                            networkRecoveryCount++;
+                                            console.log(`尝试恢复网络错误（${networkRecoveryCount}/2）`);
                                             hls.startLoad();
                                             break;
                                         case Hls.ErrorTypes.MEDIA_ERROR:
-                                            console.log("尝试恢复媒体错误");
+                                            if (mediaRecoveryCount >= 2) {
+                                                showError('视频解码失败，请切换其他来源');
+                                                hls.destroy();
+                                                currentHls = null;
+                                                return;
+                                            }
+                                            mediaRecoveryCount++;
+                                            console.log(`尝试恢复媒体错误（${mediaRecoveryCount}/2）`);
                                             hls.recoverMediaError();
                                             break;
                                         default:
-                                            // 仅在多次恢复尝试后显示错误
-                                            if (errorCount > 3 && !errorDisplayed) {
+                                            if (!errorDisplayed) {
                                                 errorDisplayed = true;
                                                 showError('视频加载失败，可能是格式不兼容或源不可用');
                                             }
@@ -845,8 +731,8 @@
                 if (document.getElementById('loading').style.display !== 'none') {
                     document.getElementById('loading').innerHTML = `
                         <div class="loading-spinner"></div>
-                        <div>视频加载时间较长，请耐心等待...</div>
-                        <div style="font-size: 12px; color: #aaa; margin-top: 10px;">如长时间无响应，请尝试其他视频源</div>
+                        <div>视频加载时间较长，请耐心等待</div>
+                        <div class="error-help">如长时间无响应，请尝试其他视频源</div>
                     `;
                 }
             }, 10000);
@@ -927,10 +813,19 @@
 
         // 更新集数信息
         function updateEpisodeInfo() {
-            if (currentEpisodes.length > 0) {
-                document.getElementById('episodeInfo').textContent = `第 ${currentEpisodeIndex + 1}/${currentEpisodes.length} 集`;
+            const total = currentEpisodes.length;
+            const info = document.getElementById('episodeInfo');
+            const summary = document.getElementById('episodePositionSummary');
+            const countLabel = document.getElementById('episodeCountLabel');
+
+            if (total > 0) {
+                info.textContent = `第 ${currentEpisodeIndex + 1} / ${total} 集`;
+                summary.textContent = `共 ${total} 集`;
+                countLabel.textContent = `共 ${total} 集`;
             } else {
-                document.getElementById('episodeInfo').textContent = '无集数信息';
+                info.textContent = '暂无剧集';
+                summary.textContent = '当前片源未提供剧集信息';
+                countLabel.textContent = '暂无剧集';
             }
         }
 
@@ -939,27 +834,13 @@
             const prevButton = document.getElementById('prevButton');
             const nextButton = document.getElementById('nextButton');
             
-            // 处理上一集按钮
-            if (currentEpisodeIndex > 0) {
-                prevButton.classList.remove('bg-gray-700', 'cursor-not-allowed');
-                prevButton.classList.add('bg-[#222]', 'hover:bg-[#333]');
-                prevButton.removeAttribute('disabled');
-            } else {
-                prevButton.classList.add('bg-gray-700', 'cursor-not-allowed');
-                prevButton.classList.remove('bg-[#222]', 'hover:bg-[#333]');
-                prevButton.setAttribute('disabled', '');
-            }
-            
-            // 处理下一集按钮
-            if (currentEpisodeIndex < currentEpisodes.length - 1) {
-                nextButton.classList.remove('bg-gray-700', 'cursor-not-allowed');
-                nextButton.classList.add('bg-[#222]', 'hover:bg-[#333]');
-                nextButton.removeAttribute('disabled');
-            } else {
-                nextButton.classList.add('bg-gray-700', 'cursor-not-allowed');
-                nextButton.classList.remove('bg-[#222]', 'hover:bg-[#333]');
-                nextButton.setAttribute('disabled', '');
-            }
+            const previousDisabled = currentEpisodeIndex <= 0;
+            prevButton.disabled = previousDisabled;
+            prevButton.classList.toggle('is-disabled', previousDisabled);
+
+            const nextDisabled = currentEpisodeIndex >= currentEpisodes.length - 1;
+            nextButton.disabled = nextDisabled;
+            nextButton.classList.toggle('is-disabled', nextDisabled);
         }
 
         // 渲染集数按钮
@@ -968,7 +849,8 @@
             if (!episodesList) return;
             
             if (!currentEpisodes || currentEpisodes.length === 0) {
-                episodesList.innerHTML = '<div class="col-span-full text-center text-gray-400 py-8">没有可用的集数</div>';
+                episodesList.innerHTML = '<div class="episodes-empty">没有可用的集数</div>';
+                document.getElementById('episodeCountLabel').textContent = '暂无剧集';
                 return;
             }
             
@@ -983,19 +865,24 @@
                 html += `
                     <button id="episode-${realIndex}" 
                             onclick="playEpisode(${realIndex})" 
-                            class="px-4 py-2 ${isActive ? 'episode-active' : 'bg-[#222] hover:bg-[#333]'} border ${isActive ? 'border-blue-500' : 'border-[#333]'} rounded-lg transition-colors text-center episode-btn">
+                            class="episode-btn${isActive ? ' episode-active' : ''}"
+                            ${isActive ? 'aria-current="true"' : ''}>
                         第${realIndex + 1}集
                     </button>
                 `;
             });
             
             episodesList.innerHTML = html;
+            document.getElementById('episodeCountLabel').textContent = `共 ${currentEpisodes.length} 集`;
         }
 
         // 播放指定集数
-        function playEpisode(index) {
+        function playEpisode(index, options = {}) {
+            const shouldUpdateHistory = options.updateHistory !== false;
+            const requestedUrl = options.url || currentEpisodes[index];
+
             // 确保index在有效范围内
-            if (index < 0 || index >= currentEpisodes.length) {
+            if (!Number.isInteger(index) || index < 0 || index >= currentEpisodes.length || !requestedUrl) {
                 console.error(`无效的剧集索引: ${index}, 当前剧集数量: ${currentEpisodes.length}`);
                 showToast(`无效的剧集索引: ${index + 1}，当前剧集总数: ${currentEpisodes.length}`);
                 return;
@@ -1021,7 +908,7 @@
                 <div>正在加载视频...</div>
             `;
             
-            const url = currentEpisodes[index];
+            const url = requestedUrl;
             currentEpisodeIndex = index;
             videoHasEnded = false; // 重置视频结束标志
             
@@ -1030,17 +917,19 @@
             const sourceName = urlParams.get('source') || '';
             const sourceCode = urlParams.get('source_code') || '';
             
-            // 更新URL，不刷新页面，保留source参数
-            const newUrl = new URL(window.location.href);
-            newUrl.searchParams.set('index', index);
-            newUrl.searchParams.set('url', url);
-            if (sourceName) {
-                newUrl.searchParams.set('source', sourceName);
+            // 用户切换剧集时新增一条历史记录；浏览器前进/后退时只同步播放状态
+            if (shouldUpdateHistory) {
+                const newUrl = new URL(window.location.href);
+                newUrl.searchParams.set('index', index);
+                newUrl.searchParams.set('url', url);
+                if (sourceName) {
+                    newUrl.searchParams.set('source', sourceName);
+                }
+                if (sourceCode) {
+                    newUrl.searchParams.set('source_code', sourceCode);
+                }
+                window.history.pushState({ episodeIndex: index, videoUrl: url }, '', newUrl);
             }
-            if (sourceCode) {
-                newUrl.searchParams.set('source_code', sourceCode);
-            }
-            window.history.pushState({}, '', newUrl);
             
             // 更新播放器
             if (dp) {
@@ -1078,6 +967,40 @@
             
             // 三秒后保存到历史记录
             setTimeout(() => saveToHistory(), 3000);
+        }
+
+        // 同步浏览器前进/后退与剧集播放状态
+        function handleHistoryNavigation() {
+            if (!currentEpisodes.length) return;
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const targetUrl = urlParams.get('url');
+            let index = Number.parseInt(urlParams.get('index') || '0', 10);
+
+            if (!Number.isInteger(index)) {
+                index = 0;
+            }
+
+            if (!targetUrl) {
+                if (index < 0 || index >= currentEpisodes.length) return;
+            } else if (index < 0 || index >= currentEpisodes.length || currentEpisodes[index] !== targetUrl) {
+                const matchedIndex = currentEpisodes.indexOf(targetUrl);
+                if (matchedIndex === -1) {
+                    console.warn('历史记录中的剧集不在当前列表中，忽略本次导航');
+                    return;
+                }
+                index = matchedIndex;
+            }
+
+            const resolvedUrl = targetUrl || currentEpisodes[index];
+            if (index === currentEpisodeIndex && resolvedUrl === currentEpisodes[currentEpisodeIndex] && dp) {
+                updateEpisodeInfo();
+                updateButtonStates();
+                renderEpisodes();
+                return;
+            }
+
+            playEpisode(index, { url: resolvedUrl, updateHistory: false });
         }
 
         // 播放上一集

@@ -12,20 +12,14 @@ const PASSWORD_CONFIG = {
 
 // 网站信息配置
 const SITE_CONFIG = {
-    name: 'LibreTV',
+    name: '在线视频搜索',
     url: 'https://libretv.is-an.org',
     description: '免费在线视频搜索与观看平台',
-    logo: 'https://images.icon-icons.com/38/PNG/512/retrotv_5520.png',
     version: '1.0.3'
 };
 
 // API站点配置
 const API_SITES = {
-    heimuer: {
-        api: 'https://json.heimuer.xyz',
-        name: '黑木耳',
-        detail: 'https://heimuer.tv',
-    },
     dyttzy: {
         api: 'http://caiji.dyttzyapi.com',
         name: '电影天堂资源',
@@ -36,10 +30,6 @@ const API_SITES = {
         name: '非凡影视',
         detail: 'http://ffzy5.tv',
     },
-    tyyszy: {
-        api: 'https://tyyszy.com',
-        name: '天涯资源',
-    },
     ckzy: {
         api: 'https://www.ckzy1.com',
         name: 'CK资源',
@@ -48,10 +38,6 @@ const API_SITES = {
     zy360: {
         api: 'https://360zy.com',
         name: '360资源',
-    },
-    wolong: {
-        api: 'https://wolongzyw.com',
-        name: '卧龙资源',
     },
     hwba: {
         api: 'https://cjhwba.com',
@@ -62,17 +48,9 @@ const API_SITES = {
         name: '极速资源',
         detail: 'https://jszyapi.com'
     },
-    dbzy: {
-        api: 'https://dbzy.com',
-        name: '豆瓣资源',
-    },
     bfzy: {
         api: 'https://bfzyapi.com',
         name: '暴风资源',
-    },
-    mozhua: {
-        api: 'https://mozhuazy.com',
-        name: '魔爪资源',
     },
     mdzy: {
         api: 'https://www.mdzyapi.com',
@@ -85,11 +63,6 @@ const API_SITES = {
     jkun: {
         api: 'https://jkunzyapi.com',
         name: 'jkun资源',
-        adult: true
-    },
-    bwzy: {
-        api: 'https://api.bwzym3u8.com',
-        name: '百万资源',
         adult: true
     },
     souav: {
@@ -134,13 +107,52 @@ const API_SITES = {
         api: 'https://api.wujinapi.me',
         name: '无尽资源'
     },
+    lzi: {
+        api: 'https://cj.lziapi.com',
+        name: '量子资源'
+    },
+    guangsu: {
+        api: 'https://api.guangsuapi.com',
+        name: '光速资源'
+    },
+    hongniu: {
+        api: 'https://www.hongniuzy2.com',
+        name: '红牛资源'
+    },
+    jinying: {
+        api: 'https://jinyingzy.com',
+        name: '金鹰资源'
+    },
+    huya: {
+        api: 'https://www.huyaapi.com',
+        name: '虎牙资源'
+    },
+    subo: {
+        api: 'https://subocaiji.com',
+        name: '速播资源'
+    },
+    changzhang: {
+        api: 'https://api.changzhang.tv',
+        name: '厂长资源'
+    },
+    maoyan: {
+        api: 'https://api.maoyanapi.top',
+        name: '猫眼资源'
+    },
+    zuidazy: {
+        api: 'https://zuidazy.me',
+        name: '最大点播'
+    },
 };
 
 // 添加聚合搜索的配置选项
 const AGGREGATED_SEARCH_CONFIG = {
     enabled: true,             // 是否启用聚合搜索
-    timeout: 8000,            // 单个源超时时间（毫秒）
-    maxResults: 10000,          // 最大结果数量
+    timeout: 8000,             // 单个源超时时间（毫秒）
+    totalTimeout: 4000,        // 整轮搜索最长等待时间（毫秒）
+    maxResults: 300,           // 最多保留的结果数量
+    initialRenderLimit: 60,    // 首次展示的结果数量
+    renderBatchSize: 60,       // 每次“加载更多”增加的数量
     parallelRequests: true,   // 是否并行请求所有源
     showSourceBadges: true    // 是否显示来源徽章
 };

@@ -182,32 +182,6 @@ function fillAndSearchWithDouban(title) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
     
-    // 确保豆瓣资源API被选中
-    if (typeof selectedAPIs !== 'undefined' && !selectedAPIs.includes('dbzy')) {
-        // 在设置中勾选豆瓣资源API复选框
-        const doubanCheckbox = document.querySelector('input[id="api_dbzy"]');
-        if (doubanCheckbox) {
-            doubanCheckbox.checked = true;
-            
-            // 触发updateSelectedAPIs函数以更新状态
-            if (typeof updateSelectedAPIs === 'function') {
-                updateSelectedAPIs();
-            } else {
-                // 如果函数不可用，则手动添加到selectedAPIs
-                selectedAPIs.push('dbzy');
-                localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
-                
-                // 更新选中API计数（如果有这个元素）
-                const countEl = document.getElementById('selectedAPICount');
-                if (countEl) {
-                    countEl.textContent = selectedAPIs.length;
-                }
-            }
-            
-            showToast('已自动选择豆瓣资源API', 'info');
-        }
-    }
-    
     // 填充搜索框并执行搜索
     const input = document.getElementById('searchInput');
     if (input) {
@@ -227,10 +201,10 @@ function renderDoubanMovieTvSwitch() {
     movieToggle.addEventListener('click', function() {
         if (doubanMovieTvCurrentSwitch !== 'movie') {
             // 更新按钮样式
-            movieToggle.classList.add('bg-pink-600', 'text-white');
+            movieToggle.classList.add('is-active');
             movieToggle.classList.remove('text-gray-300');
             
-            tvToggle.classList.remove('bg-pink-600', 'text-white');
+            tvToggle.classList.remove('is-active');
             tvToggle.classList.add('text-gray-300');
             
             doubanMovieTvCurrentSwitch = 'movie';
@@ -253,10 +227,10 @@ function renderDoubanMovieTvSwitch() {
     tvToggle.addEventListener('click', function() {
         if (doubanMovieTvCurrentSwitch !== 'tv') {
             // 更新按钮样式
-            tvToggle.classList.add('bg-pink-600', 'text-white');
+            tvToggle.classList.add('is-active');
             tvToggle.classList.remove('text-gray-300');
             
-            movieToggle.classList.remove('bg-pink-600', 'text-white');
+            movieToggle.classList.remove('is-active');
             movieToggle.classList.add('text-gray-300');
             
             doubanMovieTvCurrentSwitch = 'tv';
@@ -289,7 +263,7 @@ function renderDoubanTags(tags) {
 
     // 先添加标签管理按钮
     const manageBtn = document.createElement('button');
-    manageBtn.className = 'py-1.5 px-3.5 rounded text-sm font-medium transition-all duration-300 bg-[#1a1a1a] text-gray-300 hover:bg-pink-700 hover:text-white';
+    manageBtn.className = 'tag-manage';
     manageBtn.innerHTML = '<span class="flex items-center"><svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>管理标签</span>';
     manageBtn.onclick = function() {
         showTagManageModal();
@@ -300,17 +274,7 @@ function renderDoubanTags(tags) {
     currentTags.forEach(tag => {
         const btn = document.createElement('button');
         
-        // 设置样式
-        let btnClass = 'py-1.5 px-3.5 rounded text-sm font-medium transition-all duration-300 ';
-        
-        // 当前选中的标签使用高亮样式
-        if (tag === doubanCurrentTag) {
-            btnClass += 'bg-pink-600 text-white shadow-md';
-        } else {
-            btnClass += 'bg-[#1a1a1a] text-gray-300 hover:bg-pink-700 hover:text-white';
-        }
-        
-        btn.className = btnClass;
+        btn.className = tag === doubanCurrentTag ? 'is-active' : '';
         btn.textContent = tag;
         
         btn.onclick = function() {
@@ -372,24 +336,16 @@ function renderRecommend(tag, pageLimit, pageStart) {
     const container = document.getElementById("douban-results");
     if (!container) return;
 
+    container.querySelectorAll(".poster-loading").forEach(overlay => overlay.remove());
+
     const loadingOverlay = document.createElement("div");
-    loadingOverlay.classList.add(
-        "absolute",
-        "inset-0",
-        "bg-gray-100",
-        "bg-opacity-75",
-        "flex",
-        "items-center",
-        "justify-center",
-        "z-10"
-    );
+    loadingOverlay.className = "poster-loading";
 
     const loadingContent = document.createElement("div");
+    loadingContent.className = "poster-loading-inner";
     loadingContent.innerHTML = `
-      <div class="flex items-center justify-center">
-          <div class="w-6 h-6 border-2 border-pink-500 border-t-transparent rounded-full animate-spin inline-block"></div>
-          <span class="text-pink-500 ml-4">加载中...</span>
-      </div>
+      <span class="poster-loading-spinner"></span>
+      <span>正在更新片单</span>
     `;
     loadingOverlay.appendChild(loadingContent);
 
@@ -407,9 +363,11 @@ function renderRecommend(tag, pageLimit, pageStart) {
         .catch(error => {
             console.error("获取豆瓣数据失败：", error);
             container.innerHTML = `
-                <div class="col-span-full text-center py-8">
-                    <div class="text-red-400">❌ 获取豆瓣数据失败，请稍后重试</div>
-                    <div class="text-gray-500 text-sm mt-2">提示：使用VPN可能有助于解决此问题</div>
+                <div class="empty-state">
+                    <div>
+                        <h3>片单暂时无法加载</h3>
+                        <p>请稍后重试，或检查当前网络连接</p>
+                    </div>
                 </div>
             `;
         });
@@ -476,16 +434,19 @@ function renderDoubanCards(data, container) {
     // 如果没有数据
     if (!data.subjects || data.subjects.length === 0) {
         const emptyEl = document.createElement("div");
-        emptyEl.className = "col-span-full text-center py-8";
+        emptyEl.className = "empty-state";
         emptyEl.innerHTML = `
-            <div class="text-pink-500">❌ 暂无数据，请尝试其他分类或刷新</div>
+            <div>
+                <h3>这个分类还没有片单</h3>
+                <p>换一个分类，或稍后再试</p>
+            </div>
         `;
         fragment.appendChild(emptyEl);
     } else {
         // 循环创建每个影视卡片
         data.subjects.forEach(item => {
             const card = document.createElement("div");
-            card.className = "bg-[#111] hover:bg-[#222] transition-all duration-300 rounded-lg overflow-hidden flex flex-col transform hover:scale-105 shadow-md hover:shadow-lg";
+            card.className = "poster-card";
             
             // 生成卡片内容，确保安全显示（防止XSS）
             const safeTitle = item.title
@@ -497,36 +458,38 @@ function renderDoubanCards(data, container) {
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');
             
-            // 处理图片URL
-            // 1. 直接使用豆瓣图片URL (添加no-referrer属性)
-            const originalCoverUrl = item.cover;
-            
-            // 2. 也准备代理URL作为备选
-            const proxiedCoverUrl = PROXY_URL + encodeURIComponent(originalCoverUrl);
+            const proxiedCoverUrl = item.cover ? PROXY_URL + encodeURIComponent(item.cover) : '';
+            const mediaLabel = doubanMovieTvCurrentSwitch === 'movie' ? '电影' : '剧集';
             
             // 为不同设备优化卡片布局
             card.innerHTML = `
-                <div class="relative w-full aspect-[2/3] overflow-hidden cursor-pointer" onclick="fillAndSearchWithDouban('${safeTitle}')">
-                    <img src="${originalCoverUrl}" alt="${safeTitle}" 
-                        class="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
-                        onerror="this.onerror=null; this.src='${proxiedCoverUrl}'; this.classList.add('object-contain');"
-                        loading="lazy" referrerpolicy="no-referrer">
-                    <div class="absolute inset-0 bg-gradient-to-t from-black to-transparent opacity-60"></div>
-                    <div class="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded-sm">
-                        <span class="text-yellow-400">★</span> ${safeRate}
+                <div class="poster-frame" onclick="fillAndSearchWithDouban('${safeTitle}')">
+                    ${proxiedCoverUrl ? `
+                        <img src="${proxiedCoverUrl}" alt="${safeTitle}"
+                            onerror="this.closest('.poster-frame').classList.add('is-missing'); this.remove();"
+                            loading="lazy">
+                    ` : `<div class="poster-placeholder">${safeTitle}</div>`}
+                    <div class="rating-badge">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="m12 2.8 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 2.8z"></path>
+                        </svg>
+                        ${safeRate}
                     </div>
-                    <div class="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-sm hover:bg-[#333] transition-colors">
-                        <a href="${item.url}" target="_blank" rel="noopener noreferrer" title="在豆瓣查看">
-                            🔗
-                        </a>
-                    </div>
+                    <a class="external-link" href="${item.url}" target="_blank" rel="noopener noreferrer" title="在豆瓣查看" onclick="event.stopPropagation()">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M14 5h5v5M19 5l-8 8M10 6H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
+                        </svg>
+                    </a>
                 </div>
-                <div class="p-2 text-center bg-[#111]">
-                    <button onclick="fillAndSearchWithDouban('${safeTitle}')" 
-                            class="text-sm font-medium text-white truncate w-full hover:text-pink-400 transition"
-                            title="${safeTitle}">
-                        ${safeTitle}
-                    </button>
+                <button onclick="fillAndSearchWithDouban('${safeTitle}')"
+                        class="poster-title"
+                        title="${safeTitle}">
+                    ${safeTitle}
+                </button>
+                <div class="poster-meta">
+                    <span>豆瓣</span>
+                    <span class="dot"></span>
+                    <span>${mediaLabel}</span>
                 </div>
             `;
             

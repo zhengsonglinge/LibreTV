@@ -200,9 +200,9 @@ function renderSearchHistory() {
     
     // 创建一个包含标题和清除按钮的行
     historyContainer.innerHTML = `
-        <div class="flex justify-between items-center w-full mb-2">
-            <div class="text-gray-500">最近搜索:</div>
-            <button id="clearHistoryBtn" class="text-gray-500 hover:text-white transition-colors" 
+        <div class="recent-searches-head">
+            <span>最近搜索</span>
+            <button id="clearHistoryBtn" class="recent-clear"
                     onclick="clearSearchHistory()" aria-label="清除搜索历史">
                 清除搜索历史
             </button>

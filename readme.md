@@ -97,6 +97,9 @@ services:
 # 安装依赖
 npm install
 
+# 构建静态样式（修改页面类名后重新执行）
+npm run build:css
+
 # 启动开发服务器
 npm run dev
 ```
@@ -143,7 +146,7 @@ LibreTV 支持标准的苹果 CMS V10 API 格式。添加自定义 API 时需遵
 ## 🛠️ 技术栈
 
 - HTML5 + CSS3 + JavaScript (ES6+)
-- Tailwind CSS (通过 CDN 引入)
+- Tailwind CSS（构建期编译）
 - HLS.js 用于 HLS 流处理
 - DPlayer 视频播放器核心
 - Cloudflare/Vercel/Netlify Serverless Functions

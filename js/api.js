@@ -1,7 +1,7 @@
 // 改进的API请求处理函数
 async function handleApiRequest(url) {
     const customApi = url.searchParams.get('customApi') || '';
-    const source = url.searchParams.get('source') || 'heimuer';
+    const source = url.searchParams.get('source') || 'dyttzy';
     
     try {
         if (url.pathname === '/api/search') {
@@ -69,7 +69,7 @@ async function handleApiRequest(url) {
         // 详情处理
         if (url.pathname === '/api/detail') {
             const id = url.searchParams.get('id');
-            const sourceCode = url.searchParams.get('source') || 'heimuer'; // 获取源代码
+            const sourceCode = url.searchParams.get('source') || 'dyttzy'; // 获取源代码
             
             if (!id) {
                 throw new Error('缺少视频ID参数');

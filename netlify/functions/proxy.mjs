@@ -87,11 +87,14 @@ function rewriteUrlToProxy(targetUrl) {
 function getRandomUserAgent() { return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]; }
 
 async function fetchContentWithType(targetUrl, requestHeaders) {
+    const targetHost = new URL(targetUrl).hostname;
     const headers = {
         'User-Agent': getRandomUserAgent(),
         'Accept': requestHeaders['accept'] || '*/*',
         'Accept-Language': requestHeaders['accept-language'] || 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Referer': requestHeaders['referer'] || new URL(targetUrl).origin,
+        'Referer': targetHost.endsWith('doubanio.com')
+            ? 'https://movie.douban.com/'
+            : requestHeaders['referer'] || new URL(targetUrl).origin,
     };
     Object.keys(headers).forEach(key => headers[key] === undefined || headers[key] === null || headers[key] === '' ? delete headers[key] : {});
     logDebug(`Fetching target: ${targetUrl} with headers: ${JSON.stringify(headers)}`);

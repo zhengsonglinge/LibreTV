@@ -1,6 +1,15 @@
 // 全局变量
-let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '["tyyszy","dyttzy", "bfzy", "ruyi"]'); // 默认选中天涯资源、暴风资源和如意资源
+let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '["dyttzy", "bfzy", "ruyi"]'); // 默认选中电影天堂、暴风资源和如意资源
+const storedSelectedAPIs = [...selectedAPIs];
+selectedAPIs = selectedAPIs.filter(apiId => apiId.startsWith('custom_') || Boolean(API_SITES[apiId]));
+if (selectedAPIs.length !== storedSelectedAPIs.length) {
+    localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+}
 let customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]'); // 存储自定义API列表
+let activeSearchRun = null;
+let searchRunSequence = 0;
+
+const SEARCH_RESULT_BANNED_TYPES = ['伦理片', '福利', '里番动漫', '门事件', '萝莉少女', '制服诱惑', '国产传媒', 'cosplay', '黑丝诱惑', '无码', '日本无码', '有码', '日本有码', 'SWAG', '网红主播', '色情片', '同性片', '福利视频', '福利片'];
 
 // 添加当前播放的集数索引
 let currentEpisodeIndex = 0;
@@ -27,9 +36,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 设置默认API选择（如果是第一次加载）
     if (!localStorage.getItem('hasInitializedDefaults')) {
-        // 仅选择天涯资源、暴风资源和如意资源
+        // 默认选择所有非成人资源
         selectedAPIs = Object.keys(API_SITES).filter(apiKey => !API_SITES[apiKey].adult);
-        // selectedAPIs = ["tyyszy", "bfzy", "dyttzy", "ruyi"];
+        // selectedAPIs = ["dyttzy", "bfzy", "ruyi"];
         localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
 
         // 默认选中过滤开关
@@ -70,7 +79,7 @@ function initAPICheckboxes() {
     // 添加普通API组标题
     const normaldiv = document.createElement('div');
     normaldiv.id = 'normaldiv';
-    normaldiv.className = 'grid grid-cols-2 gap-2';
+    normaldiv.className = 'settings-api-grid';
     const normalTitle = document.createElement('div');
     normalTitle.className = 'api-group-title';
     normalTitle.textContent = '普通资源';
@@ -118,7 +127,7 @@ function addAdultAPI() {
         // 添加成人API组标题
         const adultdiv = document.createElement('div');
         adultdiv.id = 'adultdiv';
-        adultdiv.className = 'grid grid-cols-2 gap-2';
+        adultdiv.className = 'settings-api-grid';
         const adultTitle = document.createElement('div');
         adultTitle.className = 'api-group-title adult';
         adultTitle.innerHTML = `黄色资源采集站 <span class="adult-warning">
@@ -572,13 +581,24 @@ function setupEventListeners() {
 
 // 重置搜索区域
 function resetSearchArea() {
+    abortActiveSearch();
+    setSearchButtonBusy(false);
+
     // 清理搜索结果
     document.getElementById('results').innerHTML = '';
     document.getElementById('searchInput').value = '';
+    document.getElementById('searchResultsCount').textContent = '0';
+    const resultsFooter = document.getElementById('resultsFooter');
+    const resultsStatus = document.getElementById('searchResultsStatus');
+    const loadMoreButton = document.getElementById('loadMoreResults');
+    if (resultsFooter) resultsFooter.classList.add('hidden');
+    if (resultsStatus) resultsStatus.textContent = '';
+    if (loadMoreButton) loadMoreButton.classList.add('hidden');
 
     // 恢复搜索区域的样式
     document.getElementById('searchArea').classList.add('flex-1');
     document.getElementById('searchArea').classList.remove('mb-8');
+    document.getElementById('searchArea').classList.remove('is-compact');
     document.getElementById('resultsArea').classList.add('hidden');
 
     // 确保页脚正确显示，移除相对定位
@@ -602,222 +622,354 @@ function getCustomApiInfo(customApiIndex) {
     return customAPIs[index];
 }
 
-// 搜索功能 - 修改为支持多选API
+function isCurrentSearchRun(run) {
+    return Boolean(run && activeSearchRun === run);
+}
+
+function setSearchButtonBusy(isBusy) {
+    const button = document.querySelector('.search-submit');
+    if (!button) return;
+    button.disabled = isBusy;
+    button.classList.toggle('is-busy', isBusy);
+    button.setAttribute('aria-busy', String(isBusy));
+}
+
+function abortActiveSearch() {
+    if (!activeSearchRun) return;
+    clearTimeout(activeSearchRun.deadlineId);
+    clearTimeout(activeSearchRun.renderTimer);
+    activeSearchRun.controller.abort();
+    activeSearchRun = null;
+}
+
+function shouldIncludeSearchResult(item) {
+    if (localStorage.getItem('yellowFilterEnabled') !== 'true') {
+        return true;
+    }
+    const typeName = String(item.type_name || '');
+    return !SEARCH_RESULT_BANNED_TYPES.some(keyword => typeName.includes(keyword));
+}
+
+function getSearchResultKey(item) {
+    const source = item.source_code || '';
+    const id = String(item.vod_id || '').trim();
+    const name = String(item.vod_name || '').trim();
+    return id ? `${source}|${id}` : `${source}|${name}|${item.vod_year || ''}`;
+}
+
+function renderSearchCard(item) {
+    const safeId = item.vod_id ? item.vod_id.toString().replace(/[^\w-]/g, '') : '';
+    const safeName = (item.vod_name || '').toString()
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    const sourceInfo = item.source_name ?
+        `<span class="source-badge">${item.source_name}</span>` : '';
+    const sourceCode = item.source_code || '';
+    const safeRemarks = (item.vod_remarks || '暂无简介').toString().replace(/</g, '&lt;');
+    const safeType = (item.type_name || '').toString().replace(/</g, '&lt;');
+    const metaParts = [safeType, item.vod_year].filter(Boolean);
+    const apiUrlAttr = item.api_url ?
+        `data-api-url="${item.api_url.replace(/"/g, '&quot;')}"` : '';
+    const hasCover = item.vod_pic && item.vod_pic.startsWith('http');
+
+    return `
+        <article class="search-card" ${apiUrlAttr}>
+            <div class="poster-frame" onclick="showDetails('${safeId}','${safeName}','${sourceCode}')">
+                ${hasCover ? `
+                    <img src="${item.vod_pic}" alt="${safeName}"
+                         onerror="this.closest('.poster-frame').classList.add('is-missing'); this.remove();"
+                         loading="lazy">
+                ` : `
+                    <div class="poster-placeholder">${safeName}</div>
+                `}
+            </div>
+            <button class="poster-title" onclick="showDetails('${safeId}','${safeName}','${sourceCode}')" title="${safeName}">${safeName}</button>
+            <p class="search-card-summary">${safeRemarks}</p>
+            <div class="search-card-footer">
+                ${sourceInfo || '<span class="source-badge">未标记来源</span>'}
+                <span>${metaParts.join(' · ')}</span>
+            </div>
+        </article>
+    `;
+}
+
+function updateSearchResultSummary(run) {
+    const count = document.getElementById('searchResultsCount');
+    const footer = document.getElementById('resultsFooter');
+    const status = document.getElementById('searchResultsStatus');
+    const loadMoreButton = document.getElementById('loadMoreResults');
+    if (!count || !footer || !status || !loadMoreButton) return;
+
+    count.textContent = run.results.length;
+    footer.classList.remove('hidden');
+
+    const remaining = run.results.length - run.renderedCount;
+    const sourceSummary = run.completed
+        ? `已从 ${run.settledSources}/${run.totalSources} 个来源汇总`
+        : `正在从 ${run.settledSources}/${run.totalSources} 个来源汇总`;
+    status.textContent = remaining > 0
+        ? `已显示 ${run.renderedCount} / ${run.results.length} 条，${sourceSummary}`
+        : `已显示 ${run.results.length} 条，${sourceSummary}`;
+
+    if (run.completed && run.timedOut) {
+        status.textContent += '，部分来源未在限时内返回';
+    }
+    if (run.truncated) {
+        status.textContent += `，已达到 ${AGGREGATED_SEARCH_CONFIG.maxResults} 条上限`;
+    }
+
+    loadMoreButton.classList.toggle('hidden', remaining <= 0);
+}
+
+function revealSearchResults() {
+    const searchArea = document.getElementById('searchArea');
+    searchArea.classList.remove('flex-1');
+    searchArea.classList.add('mb-8');
+    searchArea.classList.add('is-compact');
+
+    const resultsArea = document.getElementById('resultsArea');
+    resultsArea.classList.remove('hidden');
+    resultsArea.setAttribute('aria-busy', 'true');
+
+    const doubanArea = document.getElementById('doubanArea');
+    if (doubanArea) {
+        doubanArea.classList.add('hidden');
+    }
+}
+
+function resetSearchResultUi() {
+    document.getElementById('results').innerHTML = '';
+    document.getElementById('searchResultsCount').textContent = '0';
+    document.getElementById('resultsFooter').classList.add('hidden');
+    document.getElementById('searchResultsStatus').textContent = '';
+    document.getElementById('loadMoreResults').classList.add('hidden');
+    revealSearchResults();
+}
+
+function flushSearchResults(run) {
+    if (!isCurrentSearchRun(run)) return;
+
+    const target = Math.min(run.results.length, run.renderLimit);
+    if (target > run.renderedCount) {
+        const items = run.results.slice(run.renderedCount, target);
+        const buffer = document.createElement('div');
+        buffer.innerHTML = items.map(renderSearchCard).join('');
+
+        const fragment = document.createDocumentFragment();
+        while (buffer.firstChild) {
+            fragment.appendChild(buffer.firstChild);
+        }
+        document.getElementById('results').appendChild(fragment);
+        run.renderedCount = target;
+        hideLoading();
+    }
+
+    updateSearchResultSummary(run);
+}
+
+function scheduleSearchResultRender(run) {
+    if (!isCurrentSearchRun(run) || run.renderTimer) return;
+    run.renderTimer = setTimeout(() => {
+        run.renderTimer = null;
+        flushSearchResults(run);
+    }, 40);
+}
+
+function appendSearchResults(run, results) {
+    if (!isCurrentSearchRun(run) || !run.acceptResults) return;
+
+    let changed = false;
+    for (const item of results) {
+        if (run.results.length >= AGGREGATED_SEARCH_CONFIG.maxResults) {
+            run.truncated = true;
+            break;
+        }
+        if (!shouldIncludeSearchResult(item)) continue;
+
+        const key = getSearchResultKey(item);
+        if (run.seenKeys.has(key)) continue;
+        run.seenKeys.add(key);
+        run.results.push(item);
+        changed = true;
+    }
+
+    if (changed) {
+        scheduleSearchResultRender(run);
+    } else {
+        updateSearchResultSummary(run);
+    }
+}
+
+function finalizeSearchResults(run) {
+    if (!isCurrentSearchRun(run)) return;
+
+    clearTimeout(run.deadlineId);
+    run.deadlineId = null;
+    run.completed = true;
+    run.acceptResults = false;
+
+    flushSearchResults(run);
+
+    if (run.results.length === 0) {
+        document.getElementById('results').innerHTML = `
+            <div class="empty-state">
+                <div>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                        <circle cx="11" cy="11" r="6.5" stroke-width="1.5"></circle>
+                        <path d="m16 16 4 4" stroke-width="1.5" stroke-linecap="round"></path>
+                    </svg>
+                    <h3>${run.timedOut ? '搜索等待超时' : '没有找到匹配的结果'}</h3>
+                    <p>${run.timedOut ? '部分来源响应较慢，请稍后重试' : '请尝试其他关键词，或在设置中增加数据源'}</p>
+                </div>
+            </div>
+        `;
+    }
+
+    document.getElementById('resultsArea').setAttribute('aria-busy', 'false');
+    updateSearchResultSummary(run);
+    hideLoading();
+    setSearchButtonBusy(false);
+}
+
+function loadMoreSearchResults() {
+    const run = activeSearchRun;
+    if (!isCurrentSearchRun(run)) return;
+    run.renderLimit = Math.min(
+        AGGREGATED_SEARCH_CONFIG.maxResults,
+        run.renderLimit + AGGREGATED_SEARCH_CONFIG.renderBatchSize
+    );
+    flushSearchResults(run);
+}
+
+async function searchApiSource(apiId, query, run) {
+    let apiUrl;
+    let apiName;
+
+    if (apiId.startsWith('custom_')) {
+        const customApi = getCustomApiInfo(apiId.replace('custom_', ''));
+        if (!customApi) return [];
+        apiUrl = customApi.url + API_CONFIG.search.path + encodeURIComponent(query);
+        apiName = customApi.name;
+    } else {
+        if (!API_SITES[apiId]) return [];
+        apiUrl = API_SITES[apiId].api + API_CONFIG.search.path + encodeURIComponent(query);
+        apiName = API_SITES[apiId].name;
+    }
+
+    const requestController = new AbortController();
+    const timeoutId = setTimeout(() => requestController.abort(), AGGREGATED_SEARCH_CONFIG.timeout);
+    const abortFromSearch = () => requestController.abort();
+    if (run.controller.signal.aborted) {
+        requestController.abort();
+    } else {
+        run.controller.signal.addEventListener('abort', abortFromSearch, { once: true });
+    }
+
+    try {
+        const response = await fetch(PROXY_URL + encodeURIComponent(apiUrl), {
+            headers: API_CONFIG.search.headers,
+            signal: requestController.signal
+        });
+
+        if (!response.ok) return [];
+        const data = await response.json();
+        if (!data || !data.list || !Array.isArray(data.list) || data.list.length === 0) {
+            return [];
+        }
+
+        return data.list.slice(0, AGGREGATED_SEARCH_CONFIG.maxResults).map(item => ({
+            ...item,
+            source_name: apiName,
+            source_code: apiId,
+            api_url: apiId.startsWith('custom_') ? getCustomApiInfo(apiId.replace('custom_', ''))?.url : undefined
+        }));
+    } catch (error) {
+        if (!run.controller.signal.aborted) {
+            console.warn(`API ${apiId} 搜索失败:`, error);
+        }
+        return [];
+    } finally {
+        clearTimeout(timeoutId);
+        run.controller.signal.removeEventListener('abort', abortFromSearch);
+    }
+}
+
 async function search() {
-    // 密码保护校验
     if (window.isPasswordProtected && window.isPasswordVerified) {
         if (window.isPasswordProtected() && !window.isPasswordVerified()) {
             showPasswordModal && showPasswordModal();
             return;
         }
     }
-    const query = document.getElementById('searchInput').value.trim();
 
+    const query = document.getElementById('searchInput').value.trim();
     if (!query) {
         showToast('请输入搜索内容', 'info');
         return;
     }
-
     if (selectedAPIs.length === 0) {
         showToast('请至少选择一个API源', 'warning');
         return;
     }
 
-    showLoading();
+    abortActiveSearch();
+    const run = {
+        id: ++searchRunSequence,
+        controller: new AbortController(),
+        results: [],
+        seenKeys: new Set(),
+        settledSources: 0,
+        totalSources: selectedAPIs.length,
+        renderedCount: 0,
+        renderLimit: AGGREGATED_SEARCH_CONFIG.initialRenderLimit,
+        deadlineId: null,
+        renderTimer: null,
+        completed: false,
+        timedOut: false,
+        truncated: false,
+        acceptResults: true
+    };
+
+    activeSearchRun = run;
+    setSearchButtonBusy(true);
+    showLoading('正在搜索多个来源...');
+    resetSearchResultUi();
 
     try {
-        // 保存搜索历史
         saveSearchHistory(query);
 
-        // 从所有选中的API源搜索
-        let allResults = [];
-        const searchPromises = selectedAPIs.map(async (apiId) => {
-            try {
-                let apiUrl, apiName;
+        run.deadlineId = setTimeout(() => {
+            if (!isCurrentSearchRun(run)) return;
+            run.timedOut = true;
+            run.acceptResults = false;
+            run.controller.abort();
+            finalizeSearchResults(run);
+        }, AGGREGATED_SEARCH_CONFIG.totalTimeout);
 
-                // 处理自定义API
-                if (apiId.startsWith('custom_')) {
-                    const customIndex = apiId.replace('custom_', '');
-                    const customApi = getCustomApiInfo(customIndex);
-                    if (!customApi) return [];
+        const searchPromises = selectedAPIs.map(apiId =>
+            searchApiSource(apiId, query, run)
+                .then(results => {
+                    appendSearchResults(run, results);
+                })
+                .finally(() => {
+                    if (!isCurrentSearchRun(run) || !run.acceptResults) return;
+                    run.settledSources += 1;
+                    updateSearchResultSummary(run);
+                })
+        );
 
-                    apiUrl = customApi.url + API_CONFIG.search.path + encodeURIComponent(query);
-                    apiName = customApi.name;
-                } else {
-                    // 内置API
-                    if (!API_SITES[apiId]) return [];
-                    apiUrl = API_SITES[apiId].api + API_CONFIG.search.path + encodeURIComponent(query);
-                    apiName = API_SITES[apiId].name;
-                }
-
-                // 添加超时处理
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-                const response = await fetch(PROXY_URL + encodeURIComponent(apiUrl), {
-                    headers: API_CONFIG.search.headers,
-                    signal: controller.signal
-                });
-
-                clearTimeout(timeoutId);
-
-                if (!response.ok) {
-                    return [];
-                }
-
-                const data = await response.json();
-
-                if (!data || !data.list || !Array.isArray(data.list) || data.list.length === 0) {
-                    return [];
-                }
-
-                // 添加源信息到每个结果
-                const results = data.list.map(item => ({
-                    ...item,
-                    source_name: apiName,
-                    source_code: apiId,
-                    api_url: apiId.startsWith('custom_') ? getCustomApiInfo(apiId.replace('custom_', ''))?.url : undefined
-                }));
-
-                return results;
-            } catch (error) {
-                console.warn(`API ${apiId} 搜索失败:`, error);
-                return [];
-            }
-        });
-
-        // 等待所有搜索请求完成
-        const resultsArray = await Promise.all(searchPromises);
-
-        // 合并所有结果
-        resultsArray.forEach(results => {
-            if (Array.isArray(results) && results.length > 0) {
-                allResults = allResults.concat(results);
-            }
-        });
-
-        // 更新搜索结果计数
-        const searchResultsCount = document.getElementById('searchResultsCount');
-        if (searchResultsCount) {
-            searchResultsCount.textContent = allResults.length;
-        }
-
-        // 显示结果区域，调整搜索区域
-        document.getElementById('searchArea').classList.remove('flex-1');
-        document.getElementById('searchArea').classList.add('mb-8');
-        document.getElementById('resultsArea').classList.remove('hidden');
-
-        // 隐藏豆瓣推荐区域（如果存在）
-        const doubanArea = document.getElementById('doubanArea');
-        if (doubanArea) {
-            doubanArea.classList.add('hidden');
-        }
-
-        const resultsDiv = document.getElementById('results');
-
-        // 如果没有结果
-        if (!allResults || allResults.length === 0) {
-            resultsDiv.innerHTML = `
-                <div class="col-span-full text-center py-16">
-                    <svg class="mx-auto h-12 w-12 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <h3 class="mt-2 text-lg font-medium text-gray-400">没有找到匹配的结果</h3>
-                    <p class="mt-1 text-sm text-gray-500">请尝试其他关键词或更换数据源</p>
-                </div>
-            `;
-            hideLoading();
-            return;
-        }
-
-        // 处理搜索结果过滤：如果启用了黄色内容过滤，则过滤掉分类含有敏感内容的项目
-        const yellowFilterEnabled = localStorage.getItem('yellowFilterEnabled') === 'true';
-        if (yellowFilterEnabled) {
-            const banned = ['伦理片', '福利', '里番动漫', '门事件', '萝莉少女', '制服诱惑', '国产传媒', 'cosplay', '黑丝诱惑', '无码', '日本无码', '有码', '日本有码', 'SWAG', '网红主播', '色情片', '同性片', '福利视频', '福利片'];
-            allResults = allResults.filter(item => {
-                const typeName = item.type_name || '';
-                return !banned.some(keyword => typeName.includes(keyword));
-            });
-        }
-
-        // 添加XSS保护，使用textContent和属性转义
-        resultsDiv.innerHTML = allResults.map(item => {
-            const safeId = item.vod_id ? item.vod_id.toString().replace(/[^\w-]/g, '') : '';
-            const safeName = (item.vod_name || '').toString()
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;');
-            const sourceInfo = item.source_name ?
-                `<span class="bg-[#222] text-xs px-1.5 py-0.5 rounded-full">${item.source_name}</span>` : '';
-            const sourceCode = item.source_code || '';
-
-            // 添加API URL属性，用于详情获取
-            const apiUrlAttr = item.api_url ?
-                `data-api-url="${item.api_url.replace(/"/g, '&quot;')}"` : '';
-
-            // 修改为水平卡片布局，图片在左侧，文本在右侧，并优化样式
-            const hasCover = item.vod_pic && item.vod_pic.startsWith('http');
-
-            return `
-                <div class="card-hover bg-[#111] rounded-lg overflow-hidden cursor-pointer transition-all hover:scale-[1.02] h-full shadow-sm hover:shadow-md" 
-                     onclick="showDetails('${safeId}','${safeName}','${sourceCode}')" ${apiUrlAttr}>
-                    <div class="flex h-full">
-                        ${hasCover ? `
-                        <div class="relative flex-shrink-0 search-card-img-container">
-                            <img src="${item.vod_pic}" alt="${safeName}" 
-                                 class="h-full w-full object-cover transition-transform hover:scale-110" 
-                                 onerror="this.onerror=null; this.src='https://via.placeholder.com/300x450?text=无封面'; this.classList.add('object-contain');" 
-                                 loading="lazy">
-                            <div class="absolute inset-0 bg-gradient-to-r from-black/30 to-transparent"></div>
-                        </div>` : ''}
-                        
-                        <div class="p-2 flex flex-col flex-grow">
-                            <div class="flex-grow">
-                                <h3 class="font-semibold mb-2 break-words line-clamp-2 ${hasCover ? '' : 'text-center'}" title="${safeName}">${safeName}</h3>
-                                
-                                <div class="flex flex-wrap ${hasCover ? '' : 'justify-center'} gap-1 mb-2">
-                                    ${(item.type_name || '').toString().replace(/</g, '&lt;') ?
-                    `<span class="text-xs py-0.5 px-1.5 rounded bg-opacity-20 bg-blue-500 text-blue-300">
-                                          ${(item.type_name || '').toString().replace(/</g, '&lt;')}
-                                      </span>` : ''}
-                                    ${(item.vod_year || '') ?
-                    `<span class="text-xs py-0.5 px-1.5 rounded bg-opacity-20 bg-purple-500 text-purple-300">
-                                          ${item.vod_year}
-                                      </span>` : ''}
-                                </div>
-                                <p class="text-gray-400 line-clamp-2 overflow-hidden ${hasCover ? '' : 'text-center'} mb-2">
-                                    ${(item.vod_remarks || '暂无介绍').toString().replace(/</g, '&lt;')}
-                                </p>
-                            </div>
-                            
-                            <div class="flex justify-between items-center mt-1 pt-1 border-t border-gray-800">
-                                ${sourceInfo ? `<div>${sourceInfo}</div>` : '<div></div>'}
-                                <!-- 接口名称过长会被挤变形
-                                <div>
-                                    <span class="text-gray-500 flex items-center hover:text-blue-400 transition-colors">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                        </svg>
-                                        播放
-                                    </span>
-                                </div>
-                                -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
+        await Promise.allSettled(searchPromises);
+        finalizeSearchResults(run);
     } catch (error) {
-        console.error('搜索错误:', error);
-        if (error.name === 'AbortError') {
-            showToast('搜索请求超时，请检查网络连接', 'error');
-        } else {
+        if (isCurrentSearchRun(run)) {
+            console.error('搜索错误:', error);
             showToast('搜索请求失败，请稍后重试', 'error');
         }
     } finally {
-        hideLoading();
+        if (isCurrentSearchRun(run) && !run.completed) {
+            finalizeSearchResults(run);
+        }
     }
 }
 
@@ -1053,7 +1205,7 @@ async function importConfig() {
 
             // 解析并验证配置
             const config = JSON.parse(content);
-            if (config.name !== 'LibreTV-Settings') throw '配置文件格式不正确';
+            if (config.name !== 'video-search-settings') throw '配置文件格式不正确';
 
             // 验证哈希
             const dataHash = await sha256(JSON.stringify(config.data));
@@ -1088,14 +1240,14 @@ async function exportConfig() {
     }
 
     const times = Date.now().toString();
-    config['name'] = 'LibreTV-Settings';  // 配置文件名，用于校验
+    config['name'] = 'video-search-settings';  // 配置文件名，用于校验
     config['time'] = times;               // 配置文件生成时间
     config['cfgVer'] = '1.0.0';           // 配置文件版本
     config['data'] = items;               // 配置文件数据
     config['hash'] = await sha256(JSON.stringify(config['data']));  // 计算数据的哈希值，用于校验
 
     // 将配置数据保存为 JSON 文件
-    saveStringAsFile(JSON.stringify(config), 'LibreTV-Settings_' + times + '.json');
+    saveStringAsFile(JSON.stringify(config), 'video-search-settings_' + times + '.json');
 }
 
 // 将字符串保存为文件
