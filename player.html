@@ -9,7 +9,7 @@
 
     <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
     <link rel="stylesheet" href="css/styles.css?v=20261112sources1">
-    <link rel="stylesheet" href="css/player.css?v=20261112playerui1">
+    <link rel="stylesheet" href="css/player.css?v=20261112nodiag1">
 </head>
 <body class="player-page">
     <header class="player-header">
@@ -55,7 +55,7 @@
                 <div class="error-container" id="error">
                     <div class="error-icon">!</div>
                     <div id="error-message">视频加载失败</div>
-                    <div class="error-help">请尝试其他视频源或稍后重试</div>
+                    <div class="error-help">可以切换片源，或检查当前网络后重试</div>
                 </div>
                 </div>
 
@@ -107,42 +107,35 @@
             </section>
 
             <section class="player-library-section" aria-label="播放内容">
-                <div class="player-library-tabs" role="tablist" aria-label="播放内容切换">
-                    <button id="episodesTab" type="button" class="player-library-tab is-active"
-                            role="tab" aria-selected="true" aria-controls="episodesPanel"
-                            onclick="showPlayerTab('episodes')">
-                        <span class="player-library-tab-label">选集</span>
-                        <span id="episodeCountLabel" class="player-library-tab-meta">正在读取剧集</span>
-                    </button>
-                    <button id="sourcesTab" type="button" class="player-library-tab"
-                            role="tab" aria-selected="false" aria-controls="sourceSwitchPanel"
-                            onclick="openSourceSwitcher()">
-                        <span class="player-library-tab-label">切换片源</span>
-                        <span id="sourceTabMeta" class="player-library-tab-meta">公开片源</span>
-                    </button>
+                <div class="player-library-header">
+                    <div class="player-library-heading">
+                        <span class="player-kicker">Episodes</span>
+                        <h2 id="episodesHeading" class="player-library-title">选集</h2>
+                    </div>
+                    <span id="episodeCountLabel" class="player-library-tab-meta">正在读取剧集</span>
                 </div>
 
-                <div id="episodesPanel" class="player-library-panel" role="tabpanel" aria-labelledby="episodesTab">
+                <div id="episodesPanel" class="player-library-panel" aria-labelledby="episodesHeading">
                     <div class="episode-grid" id="episodesGrid">
                         <div class="episodes-list" id="episodesList">
                             <div class="episodes-empty">正在加载剧集...</div>
                         </div>
                     </div>
-                </div>
 
-                <div id="sourceSwitchPanel" class="player-library-panel source-switch-panel"
-                     role="tabpanel" aria-labelledby="sourcesTab" hidden>
-                    <div class="source-switch-header">
-                        <div>
+                    <div class="player-library-header source-library-header">
+                        <div class="player-library-heading">
                             <span class="player-kicker">Sources</span>
-                            <h2 id="sourceSwitchTitle">可切换片源</h2>
-                            <p id="sourceSwitchDescription">正在查找同一影片的其他片源…</p>
+                            <h2 id="sourcesHeading" class="player-library-title">片源</h2>
                         </div>
+                        <span id="sourceCountLabel" class="player-library-tab-meta">正在读取</span>
                     </div>
-                    <div id="sourceSwitchList" class="source-switch-list" aria-live="polite">
-                        <div class="source-switch-loading">
-                            <div class="loading-spinner"></div>
-                            <span>正在搜索可用片源…</span>
+
+                    <div id="sourceSwitchPanel" class="source-switch-panel" aria-labelledby="sourcesHeading">
+                        <div id="sourceSwitchList" class="source-switch-list" aria-live="polite">
+                            <div class="source-switch-loading">
+                                <div class="loading-spinner"></div>
+                                <span>正在搜索可用片源…</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -192,12 +185,15 @@
         let currentSourceName = '';
         let sourceOptionsCache = { key: '', items: null };
         let playerSourceCandidateSnapshot = null;
+        const selectedSourceIds = new Set();
+        const SELECTED_SOURCE_HISTORY_PREFIX = 'libreTVSelectedPlayerSources:';
         const SOURCE_SWITCH_TIMEOUT = 8000;
         const SOURCE_SWITCH_MIN_SCORE = 0.55;
         let sourceSwitchRequestId = 0;
         let sourceSwitchActionInProgress = false;
         let sourceSwitchListState = {
             items: [],
+            sources: [],
             loading: false,
             completed: false,
             errors: 0,
@@ -315,10 +311,8 @@
                 || (sourceCode === 'custom' ? '自定义片源' : '');
             currentSourceCode = sourceCode || '';
             currentSourceName = sourceLabel || '公开片源';
+            loadSelectedSourceHistory();
             playerSourceCandidateSnapshot = readPlayerSourceCandidateSnapshot(currentVideoTitle);
-            if (sourceLabel) {
-                document.getElementById('sourceTabMeta').textContent = sourceLabel;
-            }
 
             // 初始化播放器
             if (videoUrl) {
@@ -352,6 +346,10 @@
             
             // 更新排序按钮状态
             updateOrderButton();
+
+            if (videoUrl) {
+                openSourceSwitcher();
+            }
 
             // 添加对进度条的监听，确保点击准确跳转
             setTimeout(() => {
@@ -485,13 +483,22 @@
             }
 
             const seen = new Set();
-            return selectedIds
-                .map(sourceId => resolveSwitchSource(sourceId, customApis))
-                .filter(source => {
-                    if (!source || seen.has(source.sourceId)) return false;
-                    seen.add(source.sourceId);
-                    return source.sourceId !== currentSourceCode;
-                });
+            const resolvedSources = [];
+            selectedIds.forEach(sourceId => {
+                const source = resolveSwitchSource(sourceId, customApis);
+                if (!source || seen.has(source.sourceId)) return;
+                seen.add(source.sourceId);
+                resolvedSources.push(source);
+            });
+
+            if (currentSourceCode && !seen.has(currentSourceCode)) {
+                const currentSource = resolveSwitchSource(currentSourceCode, customApis);
+                if (currentSource) {
+                    resolvedSources.push(currentSource);
+                }
+            }
+
+            return resolvedSources;
         }
 
         function normalizeSwitchTitle(value) {
@@ -669,13 +676,56 @@
             };
         }
 
+        function loadSelectedSourceHistory() {
+            selectedSourceIds.clear();
+            try {
+                const stored = JSON.parse(
+                    sessionStorage.getItem(`${SELECTED_SOURCE_HISTORY_PREFIX}${currentVideoTitle}`) || '[]'
+                );
+                if (Array.isArray(stored)) {
+                    stored.forEach(sourceId => {
+                        if (typeof sourceId === 'string' && sourceId) {
+                            selectedSourceIds.add(sourceId);
+                        }
+                    });
+                }
+            } catch (error) {
+                console.warn('读取已选片源记录失败:', error);
+            }
+        }
+
+        function rememberSelectedSource(sourceId) {
+            if (typeof sourceId !== 'string' || !sourceId) return;
+            selectedSourceIds.add(sourceId);
+
+            try {
+                sessionStorage.setItem(
+                    `${SELECTED_SOURCE_HISTORY_PREFIX}${currentVideoTitle}`,
+                    JSON.stringify([...selectedSourceIds])
+                );
+            } catch (error) {
+                console.warn('保存已选片源记录失败:', error);
+            }
+        }
+
         function createSourceSwitchItem(item) {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'source-switch-item';
-            if (item.isCurrent) {
+            const wasSelected = !item.isCurrent
+                && Boolean(item.sourceId)
+                && selectedSourceIds.has(item.sourceId);
+
+            if (item.isPending) {
+                button.classList.add('is-pending');
+                button.disabled = true;
+            } else if (item.isCurrent) {
                 button.classList.add('is-current');
                 button.disabled = true;
+                button.setAttribute('aria-current', 'true');
+            } else if (wasSelected) {
+                button.classList.add('is-used');
+                button.title = '已选过，点击可重新切换到此片源';
             }
 
             const main = document.createElement('span');
@@ -688,7 +738,9 @@
             const meta = document.createElement('span');
             meta.className = 'source-switch-meta';
             const episodeCount = Array.isArray(item.episodes) ? item.episodes.length : 0;
-            if (item.isCurrent) {
+            if (item.isPending) {
+                meta.textContent = '正在检查可用剧集…';
+            } else if (item.isCurrent) {
                 meta.textContent = `正在播放 · 共 ${episodeCount} 集`;
             } else if (item.matchedTitle && normalizeSwitchTitle(item.matchedTitle) !== normalizeSwitchTitle(currentVideoTitle)) {
                 meta.textContent = `匹配「${item.matchedTitle}」 · 共 ${episodeCount} 集`;
@@ -698,12 +750,22 @@
 
             const state = document.createElement('span');
             state.className = 'source-switch-state';
-            state.textContent = item.isCurrent ? '当前片源' : '切换';
+            if (item.isPending) {
+                state.textContent = '检测中';
+                state.classList.add('is-used');
+            } else if (item.isCurrent) {
+                state.textContent = '✓ 已选择';
+            } else if (wasSelected) {
+                state.textContent = '已选过';
+                state.classList.add('is-used');
+            } else {
+                state.textContent = '切换';
+            }
 
             main.append(name, meta);
             button.append(main, state);
 
-            if (!item.isCurrent) {
+            if (!item.isCurrent && !item.isPending) {
                 button.addEventListener('click', () => switchPlayerSource(item));
             }
 
@@ -712,17 +774,57 @@
 
         function renderSourceSwitchList() {
             const list = document.getElementById('sourceSwitchList');
-            const description = document.getElementById('sourceSwitchDescription');
+            const countLabel = document.getElementById('sourceCountLabel');
             if (!list) return;
 
             const currentItem = getCurrentSourceSwitchItem();
-            const otherItems = sourceSwitchListState.items
-                .filter(item => item.sourceId !== currentSourceCode);
-            list.replaceChildren(createSourceSwitchItem(currentItem));
+            const orderedSources = Array.isArray(sourceSwitchListState.sources)
+                ? sourceSwitchListState.sources
+                : [];
+            const itemById = new Map(
+                sourceSwitchListState.items.map(item => [item.sourceId, item])
+            );
+            let renderedCount = 0;
 
-            otherItems.forEach(item => {
-                list.appendChild(createSourceSwitchItem(item));
-            });
+            list.replaceChildren();
+
+            if (orderedSources.length > 0) {
+                orderedSources.forEach(source => {
+                    if (source.sourceId === currentSourceCode) {
+                        list.appendChild(createSourceSwitchItem({
+                            ...currentItem,
+                            sourceOrder: source.sourceOrder
+                        }));
+                        renderedCount += 1;
+                        return;
+                    }
+
+                    const loadedItem = itemById.get(source.sourceId);
+                    if (loadedItem) {
+                        list.appendChild(createSourceSwitchItem({
+                            ...loadedItem,
+                            isCurrent: false
+                        }));
+                        renderedCount += 1;
+                    } else if (sourceSwitchListState.loading) {
+                        list.appendChild(createSourceSwitchItem({
+                            sourceId: source.sourceId,
+                            sourceName: source.sourceName,
+                            isPending: true
+                        }));
+                        renderedCount += 1;
+                    }
+                });
+            } else {
+                list.appendChild(createSourceSwitchItem(currentItem));
+                renderedCount += 1;
+                sourceSwitchListState.items
+                    .filter(item => item.sourceId !== currentSourceCode)
+                    .forEach(item => {
+                        list.appendChild(createSourceSwitchItem(item));
+                        renderedCount += 1;
+                    });
+            }
 
             if (sourceSwitchListState.loading) {
                 const progress = document.createElement('div');
@@ -731,7 +833,7 @@
                 list.appendChild(progress);
             }
 
-            if (!sourceSwitchListState.loading && otherItems.length === 0) {
+            if (!sourceSwitchListState.loading && renderedCount <= 1) {
                 const empty = document.createElement('div');
                 empty.className = 'source-switch-empty';
                 empty.textContent = sourceSwitchListState.errors > 0
@@ -740,32 +842,25 @@
                 list.appendChild(empty);
             }
 
-            if (description) {
-                if (sourceSwitchListState.loading) {
-                    description.textContent = otherItems.length > 0
-                        ? `已找到 ${otherItems.length} 个可切换片源，正在继续检查…`
-                        : playerSourceCandidateSnapshot
-                            ? '正在读取主页搜索到的片源…'
-                            : '正在查找同一影片的其他片源…';
-                } else {
-                    description.textContent = otherItems.length > 0
-                        ? playerSourceCandidateSnapshot
-                            ? `已复用主页结果 · ${otherItems.length} 个可播放片源`
-                            : `找到 ${otherItems.length} 个可播放片源`
-                        : playerSourceCandidateSnapshot
-                            ? '主页搜索结果中没有其他可播放片源'
-                            : '当前片源可能已经是唯一可用来源';
-                }
+            if (countLabel) {
+                countLabel.textContent = sourceSwitchListState.loading
+                    ? '正在检查'
+                    : `共 ${renderedCount} 个`;
             }
         }
 
         async function loadSourceSwitchOptions(requestId, cacheKey, sources) {
             const items = [];
+            const orderedSources = sources.map((source, sourceOrder) => ({
+                ...source,
+                sourceOrder
+            }));
             let checked = 0;
             let errors = 0;
 
             sourceSwitchListState = {
                 items,
+                sources: orderedSources,
                 loading: true,
                 completed: false,
                 errors,
@@ -774,14 +869,25 @@
             };
             renderSourceSwitchList();
 
-            const tasks = sources.map(async source => {
+            const tasks = orderedSources.map(async (source, sourceOrder) => {
                 try {
+                    if (source.sourceId === currentSourceCode) {
+                        items.push({
+                            ...getCurrentSourceSwitchItem(),
+                            isCurrent: false,
+                            sourceOrder
+                        });
+                        items.sort((left, right) => left.sourceOrder - right.sourceOrder);
+                        return;
+                    }
+
                     const item = await findPlayableSource(source, requestId);
                     if (requestId !== sourceSwitchRequestId) return;
                     if (item) {
+                        item.sourceOrder = sourceOrder;
                         items.push(item);
                         items.sort((left, right) =>
-                            right.score - left.score ||
+                            left.sourceOrder - right.sourceOrder ||
                             left.sourceName.localeCompare(right.sourceName, 'zh-CN')
                         );
                     }
@@ -795,6 +901,7 @@
                     checked += 1;
                     sourceSwitchListState = {
                         items,
+                        sources: orderedSources,
                         loading: true,
                         completed: false,
                         errors,
@@ -810,39 +917,26 @@
 
             sourceSwitchListState = {
                 items,
+                sources: orderedSources,
                 loading: false,
                 completed: true,
                 errors,
                 total: sources.length,
                 loadingCount: 0
             };
-            sourceOptionsCache = { key: cacheKey, items: [...items] };
+            sourceOptionsCache = {
+                key: cacheKey,
+                items: [...items],
+                sources: [...orderedSources]
+            };
             renderSourceSwitchList();
-        }
-
-        function showPlayerTab(tabName) {
-            const episodesTab = document.getElementById('episodesTab');
-            const sourcesTab = document.getElementById('sourcesTab');
-            const episodesPanel = document.getElementById('episodesPanel');
-            const sourceSwitchPanel = document.getElementById('sourceSwitchPanel');
-            const showSources = tabName === 'sources';
-
-            episodesTab.classList.toggle('is-active', !showSources);
-            sourcesTab.classList.toggle('is-active', showSources);
-            episodesTab.setAttribute('aria-selected', String(!showSources));
-            sourcesTab.setAttribute('aria-selected', String(showSources));
-            episodesPanel.hidden = showSources;
-            sourceSwitchPanel.hidden = !showSources;
         }
 
         function openSourceSwitcher() {
             if (!currentVideoTitle || currentVideoTitle === '未知视频') {
-                showToast('暂时无法获取影片标题', 'error');
                 return;
             }
 
-            showPlayerTab('sources');
-            document.getElementById('sourcesTab').focus();
             if (sourceSwitchListState.loading) return;
 
             const sources = getSwitchSources();
@@ -857,6 +951,9 @@
             if (sourceOptionsCache.key === cacheKey && Array.isArray(sourceOptionsCache.items)) {
                 sourceSwitchListState = {
                     items: [...sourceOptionsCache.items],
+                    sources: Array.isArray(sourceOptionsCache.sources)
+                        ? [...sourceOptionsCache.sources]
+                        : [],
                     loading: false,
                     completed: true,
                     errors: 0,
@@ -867,6 +964,7 @@
             } else if (sources.length === 0) {
                 sourceSwitchListState = {
                     items: [],
+                    sources: [],
                     loading: false,
                     completed: true,
                     errors: 0,
@@ -874,14 +972,9 @@
                     loadingCount: 0
                 };
                 renderSourceSwitchList();
-                document.getElementById('sourceSwitchDescription').textContent = '没有可切换的其他片源';
             } else {
                 loadSourceSwitchOptions(requestId, cacheKey, sources);
             }
-        }
-
-        function closeSourceSwitcher() {
-            showPlayerTab('episodes');
         }
 
         function switchPlayerSource(source) {
@@ -898,6 +991,8 @@
 
             const nextEpisodes = [...source.episodes];
             const nextIndex = Math.min(currentEpisodeIndex, nextEpisodes.length - 1);
+            rememberSelectedSource(currentSourceCode);
+            rememberSelectedSource(source.sourceId);
             currentEpisodes = nextEpisodes;
             currentEpisodeIndex = nextIndex;
             currentSourceCode = source.sourceId;
@@ -920,11 +1015,11 @@
             }
             window.history.replaceState(window.history.state || {}, '', nextUrl);
 
-            document.getElementById('sourceTabMeta').textContent = currentSourceName;
             updateEpisodeInfo();
             updateButtonStates();
             renderEpisodes();
-            closeSourceSwitcher();
+            renderSourceSwitchList();
+            openSourceSwitcher();
             playEpisode(nextIndex, {
                 url: currentEpisodes[nextIndex],
                 updateHistory: false
@@ -938,15 +1033,6 @@
 
         // 处理键盘快捷键
         function handleKeyboardShortcuts(e) {
-            const sourceSwitchPanel = document.getElementById('sourceSwitchPanel');
-            if (e.key === 'Escape' && sourceSwitchPanel && !sourceSwitchPanel.hidden) {
-                closeSourceSwitcher();
-                document.getElementById('episodesTab').focus();
-                e.preventDefault();
-                e.stopPropagation();
-                return;
-            }
-
             // 忽略输入框中的按键事件
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 

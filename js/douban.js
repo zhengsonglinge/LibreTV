@@ -3,6 +3,7 @@
 // 豆瓣标签列表 - 修改为默认标签
 let defaultMovieTags = ['热门', '最新', '经典', '豆瓣高分', '冷门佳片', '华语', '欧美', '韩国', '日本', '动作', '喜剧', '爱情', '科幻', '悬疑', '恐怖', '治愈'];
 let defaultTvTags = ['热门', '美剧', '英剧', '韩剧', '日剧', '国产剧', '港剧', '日本动画', '综艺', '纪录片'];
+const DOUBAN_TYPE_STORAGE_KEY = 'doubanMovieTvCurrentSwitch';
 
 // 用户标签列表 - 存储用户实际使用的标签（包含保留的系统标签和用户添加的自定义标签）
 let movieTags = [];
@@ -48,7 +49,25 @@ function saveUserTags() {
     }
 }
 
-let doubanMovieTvCurrentSwitch = 'movie';
+function getSavedDoubanContentType() {
+    try {
+        const savedType = localStorage.getItem(DOUBAN_TYPE_STORAGE_KEY);
+        return savedType === 'tv' ? 'tv' : 'movie';
+    } catch (e) {
+        console.warn('读取电影/电视剧选择失败:', e);
+        return 'movie';
+    }
+}
+
+function saveDoubanContentType(type) {
+    try {
+        localStorage.setItem(DOUBAN_TYPE_STORAGE_KEY, type);
+    } catch (e) {
+        console.warn('保存电影/电视剧选择失败:', e);
+    }
+}
+
+let doubanMovieTvCurrentSwitch = getSavedDoubanContentType();
 let doubanCurrentTag = '热门';
 let doubanPageStart = 0;
 const doubanPageSize = 16; // 一次显示的项目数量
@@ -192,62 +211,44 @@ function fillAndSearchWithDouban(title) {
 
 // 渲染电影/电视剧切换器
 function renderDoubanMovieTvSwitch() {
-    // 获取切换按钮元素
     const movieToggle = document.getElementById('douban-movie-toggle');
     const tvToggle = document.getElementById('douban-tv-toggle');
 
-    if (!movieToggle ||!tvToggle) return;
+    if (!movieToggle || !tvToggle) return;
+
+    syncDoubanMovieTvButtons(movieToggle, tvToggle);
 
     movieToggle.addEventListener('click', function() {
-        if (doubanMovieTvCurrentSwitch !== 'movie') {
-            // 更新按钮样式
-            movieToggle.classList.add('is-active');
-            movieToggle.classList.remove('text-gray-300');
-            
-            tvToggle.classList.remove('is-active');
-            tvToggle.classList.add('text-gray-300');
-            
-            doubanMovieTvCurrentSwitch = 'movie';
-            doubanCurrentTag = '热门';
-
-            // 重新加载豆瓣内容
-            renderDoubanTags(movieTags);
-
-            // 换一批按钮事件监听
-            setupDoubanRefreshBtn();
-            
-            // 初始加载热门内容
-            if (localStorage.getItem('doubanEnabled') === 'true') {
-                renderRecommend(doubanCurrentTag, doubanPageSize, doubanPageStart);
-            }
-        }
+        switchDoubanContentType('movie', movieToggle, tvToggle);
     });
-    
-    // 电视剧按钮点击事件
+
     tvToggle.addEventListener('click', function() {
-        if (doubanMovieTvCurrentSwitch !== 'tv') {
-            // 更新按钮样式
-            tvToggle.classList.add('is-active');
-            tvToggle.classList.remove('text-gray-300');
-            
-            movieToggle.classList.remove('is-active');
-            movieToggle.classList.add('text-gray-300');
-            
-            doubanMovieTvCurrentSwitch = 'tv';
-            doubanCurrentTag = '热门';
-
-            // 重新加载豆瓣内容
-            renderDoubanTags(tvTags);
-
-            // 换一批按钮事件监听
-            setupDoubanRefreshBtn();
-            
-            // 初始加载热门内容
-            if (localStorage.getItem('doubanEnabled') === 'true') {
-                renderRecommend(doubanCurrentTag, doubanPageSize, doubanPageStart);
-            }
-        }
+        switchDoubanContentType('tv', movieToggle, tvToggle);
     });
+}
+
+function syncDoubanMovieTvButtons(movieToggle, tvToggle) {
+    const isMovie = doubanMovieTvCurrentSwitch === 'movie';
+
+    movieToggle.classList.toggle('is-active', isMovie);
+    movieToggle.classList.toggle('text-gray-300', !isMovie);
+    tvToggle.classList.toggle('is-active', !isMovie);
+    tvToggle.classList.toggle('text-gray-300', isMovie);
+}
+
+function switchDoubanContentType(type, movieToggle, tvToggle) {
+    if (doubanMovieTvCurrentSwitch === type) return;
+
+    doubanMovieTvCurrentSwitch = type;
+    saveDoubanContentType(type);
+    doubanCurrentTag = '热门';
+    doubanPageStart = 0;
+    syncDoubanMovieTvButtons(movieToggle, tvToggle);
+    renderDoubanTags(type === 'movie' ? movieTags : tvTags);
+
+    if (localStorage.getItem('doubanEnabled') === 'true') {
+        renderRecommend(doubanCurrentTag, doubanPageSize, doubanPageStart);
+    }
 }
 
 // 渲染豆瓣标签选择器

@@ -1,5 +1,5 @@
 const ASSET_VERSION = '20261112sources1';
-const STATIC_CACHE = 'video-index-static-v8';
+const STATIC_CACHE = 'video-index-static-v9';
 const IMAGE_CACHE = 'video-index-images-v8';
 const IMAGE_CACHE_LIMIT = 120;
 
@@ -113,10 +113,15 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(request)
         .then(response => {
-          putInCache(STATIC_CACHE, '/', response);
+          const navigationUrl = new URL(request.url);
+          if (navigationUrl.origin === self.location.origin && navigationUrl.pathname === '/') {
+            putInCache(STATIC_CACHE, '/', response);
+          }
           return response;
         })
-        .catch(async () => (await caches.match('/')) || Response.error())
+        .catch(async () =>
+          (await caches.match(request, { ignoreSearch: true })) || Response.error()
+        )
     );
     return;
   }
