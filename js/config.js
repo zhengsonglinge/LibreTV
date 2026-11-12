@@ -19,7 +19,7 @@ const PASSWORD_CONFIG = {
 // 网站信息配置
 const SITE_CONFIG = {
     name: '在线视频搜索',
-    url: 'https://libretv.is-an.org',
+    url: 'https://video.zhengsongling.com',
     description: '免费在线视频搜索与观看平台',
     version: '1.0.3'
 };
