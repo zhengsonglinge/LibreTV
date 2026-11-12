@@ -6,20 +6,28 @@
     <title>视频播放器</title>
 
     <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="image/logo.svg" type="image/svg+xml">
+    <link rel="icon" href="image/logo-32.png" type="image/png" sizes="32x32">
+    <link rel="apple-touch-icon" href="image/logo-192.png" sizes="192x192">
 
     <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
     <link rel="stylesheet" href="css/styles.css?v=20261113sourcenetwork2">
-    <link rel="stylesheet" href="css/player.css?v=20261113sourcenetwork2">
+    <link rel="stylesheet" href="css/player.css?v=20261113logo1">
 </head>
 <body class="player-page">
     <header class="player-header">
         <div class="player-shell player-header-inner">
-            <a href="/" class="player-back" aria-label="返回首页">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="m15 18-6-6 6-6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
-                </svg>
-                <span>返回首页</span>
-            </a>
+            <div class="player-header-leading">
+                <a href="/" class="player-back" aria-label="返回首页">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="m15 18-6-6 6-6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                    <span>返回首页</span>
+                </a>
+                <a href="/" class="player-brand" aria-label="网站首页">
+                    <img src="image/logo.svg" alt="">
+                </a>
+            </div>
             <div class="player-heading">
                 <span class="player-kicker">正在播放</span>
                 <h1 id="videoTitle" class="player-title custom-title-scroll"></h1>
@@ -89,6 +97,20 @@
                             </span>
                         </label>
                         <div class="player-option-actions">
+                            <div id="qualityControl" class="quality-control" hidden>
+                                <button id="qualityToggle" type="button" class="player-tool-button quality-toggle"
+                                        aria-haspopup="listbox" aria-expanded="false"
+                                        aria-controls="qualityMenu" aria-label="清晰度" title="清晰度"
+                                        onclick="toggleQualityMenu(event)">
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+                                              d="M5 18v-4m5 4V9m5 9V6m5 12v-7" />
+                                    </svg>
+                                    <span id="qualityLabel" class="quality-label">自动</span>
+                                </button>
+                                <div id="qualityMenu" class="quality-menu" role="listbox"
+                                     aria-label="选择清晰度" hidden></div>
+                            </div>
                             <button onclick="toggleEpisodeOrder()" class="player-tool-button">
                                 <svg xmlns="http://www.w3.org/2000/svg" id="orderIcon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 9.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z" clip-rule="evenodd" />
@@ -202,6 +224,14 @@
         };
         let dp = null;
         let currentHls = null; // 跟踪当前HLS实例
+        let playerQualityState = {
+            levels: [],
+            selectedLevel: -1,
+            activeLevel: -1,
+            auto: true,
+            current: null
+        };
+        let qualityMenuOpen = false;
         let autoplayEnabled = true; // 默认开启自动连播
         let isUserSeeking = false; // 跟踪用户是否正在拖动进度条
         let videoHasEnded = false; // 跟踪视频是否已经自然结束
@@ -209,6 +239,13 @@
         let shortcutHintTimeout = null; // 用于控制快捷键提示显示时间
         let adFilteringEnabled = true; // 默认开启广告过滤
         let progressSaveInterval = null; // 定期保存进度的计时器
+        let playerTransitionInProgress = false; // 剧集切换期间忽略旧视频的进度事件
+        let playbackRestoreToken = 0;
+        let playbackRestoreTimer = null;
+        let playbackRestoreCleanup = null;
+        let episodePlaybackRequestId = 0;
+        const sharePlaybackUrlCache = new Map();
+        const DIRECT_MEDIA_PATH_PATTERN = /\.(?:m3u8|mp4|m4v|webm|ogv|ogg|mov|flv|mkv|ts)$/i;
 
         // 页面加载
         document.addEventListener('DOMContentLoaded', function() {
@@ -229,8 +266,23 @@
             initializePageContent();
         });
 
+        document.addEventListener('click', function(event) {
+            if (!qualityMenuOpen) return;
+            const control = document.getElementById('qualityControl');
+            if (control && !control.contains(event.target)) {
+                closeQualityMenu();
+            }
+        });
+
+        document.addEventListener('keydown', function(event) {
+            if (!qualityMenuOpen || event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            closeQualityMenu(true);
+        });
+
         // 初始化页面内容
-        function initializePageContent() {
+        async function initializePageContent() {
             // 解析URL参数
             const urlParams = new URLSearchParams(window.location.search);
             const videoUrl = urlParams.get('url');
@@ -239,6 +291,7 @@
             const sourceName = urlParams.get('source');
             let index = parseInt(urlParams.get('index') || '0');
             const episodesList = urlParams.get('episodes'); // 新增：从URL获取集数信息
+            const initialPosition = Number.parseInt(urlParams.get('position') || '0', 10) || 0;
 
             // 从localStorage获取数据
             currentVideoTitle = title || localStorage.getItem('currentVideoTitle') || '未知视频';
@@ -313,23 +366,39 @@
             currentSourceName = sourceLabel || '公开片源';
             loadSelectedSourceHistory();
             playerSourceCandidateSnapshot = readPlayerSourceCandidateSnapshot(currentVideoTitle);
+            updateCurrentHistoryState(
+                initialPosition,
+                null,
+                videoUrl || currentEpisodes[currentEpisodeIndex] || ''
+            );
 
             // 初始化播放器
             if (videoUrl) {
-                initPlayer(videoUrl, sourceCode);
+                let playableVideoUrl = videoUrl;
+                if (isSharePageUrl(videoUrl)) {
+                    document.getElementById('loading').style.display = 'flex';
+                    document.getElementById('loading').innerHTML = `
+                        <div class="loading-spinner"></div>
+                        <div>正在解析视频地址...</div>
+                    `;
+                    try {
+                        playableVideoUrl = await resolvePlayableVideoUrl(videoUrl);
+                    } catch (error) {
+                        console.error('解析分享页视频地址失败:', error);
+                        showError('无法从该分享页解析出视频地址，请切换其他片源');
+                        playableVideoUrl = '';
+                    }
+                }
+                if (playableVideoUrl) {
+                    initPlayer(playableVideoUrl, sourceCode);
+                }
                 
                 // 尝试从URL参数中恢复播放位置
-                const position = urlParams.get('position');
-                if (position) {
-                    setTimeout(() => {
-                        if (dp && dp.video) {
-                            const positionNum = parseInt(position);
-                            if (!isNaN(positionNum) && positionNum > 0) {
-                                dp.seek(positionNum);
-                                showPositionRestoreHint(positionNum);
-                            }
-                        }
-                    }, 1500);
+                if (initialPosition > 0) {
+                    restorePlaybackPosition(initialPosition, {
+                        index: currentEpisodeIndex,
+                        url: videoUrl
+                    });
                 }
             } else {
                 showError('无效的视频链接');
@@ -1036,7 +1105,8 @@
             openSourceSwitcher();
             playEpisode(nextIndex, {
                 url: currentEpisodes[nextIndex],
-                updateHistory: false
+                updateHistory: false,
+                saveProgress: false
             });
             showToast(`已切换到 ${currentSourceName} · 第 ${nextIndex + 1} 集`, 'success');
 
@@ -1098,8 +1168,157 @@
             }, 2000);
         }
 
+        // 分享页地址解析
+        function isSharePageUrl(url) {
+            try {
+                const parsed = new URL(url);
+                return /^https?:$/i.test(parsed.protocol)
+                    && !DIRECT_MEDIA_PATH_PATTERN.test(parsed.pathname);
+            } catch (error) {
+                return false;
+            }
+        }
+
+        function extractPlayableVideoUrlFromSharePage(html, shareUrl) {
+            const normalizedHtml = String(html || '')
+                .replace(/\\\//g, '/')
+                .replace(/\\u002f/gi, '/')
+                .replace(/\\x2f/gi, '/')
+                .replace(/\\u0026/gi, '&')
+                .replace(/&amp;/gi, '&')
+                .replace(/&#0*38;/g, '&')
+                .replace(/&#x0*26;/gi, '&');
+            const patterns = [
+                /\b(?:var|let|const)\s+(?:main|vid|videoUrl|playUrl|sourceUrl|url)\s*=\s*["']([^"']+\.m3u8(?:\?[^"']*)?)["']/i,
+                /\b(?:main|vid|videoUrl|playUrl|sourceUrl|url)\s*[:=]\s*["']([^"']+\.m3u8(?:\?[^"']*)?)["']/i,
+                /\bsrc\s*=\s*["']([^"']+\.m3u8(?:\?[^"']*)?)["']/i,
+                /["']([^"']+\.m3u8(?:\?[^"']*)?)["']/i
+            ];
+
+            for (const pattern of patterns) {
+                const match = normalizedHtml.match(pattern);
+                if (!match || !match[1]) continue;
+                try {
+                    let candidate = match[1].trim();
+                    if (/%2f/i.test(candidate)) {
+                        candidate = decodeURIComponent(candidate);
+                    }
+                    const resolved = new URL(candidate, shareUrl);
+                    if (/^https?:$/i.test(resolved.protocol)) {
+                        return resolved.href;
+                    }
+                } catch (error) {
+                    console.warn('分享页中的视频地址无效:', match[1]);
+                }
+            }
+            return '';
+        }
+
+        function getSharePageProxyUrl(url) {
+            const proxyPrefix = typeof PROXY_URL === 'string' ? PROXY_URL : '/proxy/';
+            return `${proxyPrefix}${encodeURIComponent(url)}`;
+        }
+
+        function discardResponseBody(response) {
+            if (response && response.body && !response.bodyUsed) {
+                response.body.cancel().catch(() => {});
+            }
+        }
+
+        async function fetchSharePageResource(url, requiresProxy, signal) {
+            const requestUrl = requiresProxy ? getSharePageProxyUrl(url) : url;
+            const response = await fetch(requestUrl, {
+                credentials: 'omit',
+                signal
+            });
+            if (!response.ok) {
+                throw new Error(`分享页请求失败（HTTP ${response.status}）`);
+            }
+
+            const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+            const isHlsResponse = /mpegurl|x-mpegurl/i.test(contentType);
+            if (isHlsResponse) {
+                discardResponseBody(response);
+                return {
+                    kind: 'stream',
+                    url: requiresProxy ? requestUrl : (response.url || url)
+                };
+            }
+
+            const isTextResponse = !contentType
+                || /text\/html|application\/xhtml\+xml|text\/plain|application\/json/i.test(contentType);
+            if (!isTextResponse) {
+                discardResponseBody(response);
+                return {
+                    kind: 'stream',
+                    url: requiresProxy ? requestUrl : (response.url || url)
+                };
+            }
+
+            const text = await response.text();
+            if (text.trimStart().startsWith('#EXTM3U')) {
+                return {
+                    kind: 'stream',
+                    url: requiresProxy ? requestUrl : (response.url || url)
+                };
+            }
+            return {
+                kind: 'page',
+                text: text
+            };
+        }
+
+        async function resolvePlayableVideoUrl(url) {
+            if (!isSharePageUrl(url)) return url;
+
+            const cached = sharePlaybackUrlCache.get(url);
+            if (cached && cached.expiresAt > Date.now()) {
+                return cached.url;
+            }
+
+            const proxyModes = [false, true];
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            let lastError = null;
+            try {
+                for (const useProxy of proxyModes) {
+                    try {
+                        const resource = await fetchSharePageResource(url, useProxy, controller.signal);
+                        if (resource.kind === 'stream') {
+                            sharePlaybackUrlCache.set(url, {
+                                url: resource.url,
+                                expiresAt: Date.now() + 5 * 60 * 1000
+                            });
+                            console.log('分享地址本身为 HLS 流:', resource.url);
+                            return resource.url;
+                        }
+
+                        const playableUrl = extractPlayableVideoUrlFromSharePage(resource.text, url);
+                        if (!playableUrl) {
+                            throw new Error('分享页中未找到 m3u8 地址');
+                        }
+                        sharePlaybackUrlCache.set(url, {
+                            url: playableUrl,
+                            expiresAt: Date.now() + 5 * 60 * 1000
+                        });
+                        console.log('已从分享页解析视频地址:', playableUrl);
+                        return playableUrl;
+                    } catch (error) {
+                        lastError = error;
+                        if (error && error.name === 'AbortError') break;
+                        console.warn(`分享页${useProxy ? '代理' : '直连'}解析失败:`, error);
+                    }
+                }
+                throw lastError || new Error('分享页解析失败');
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
         // 初始化播放器
         function initPlayer(videoUrl, sourceCode) {
+            resetPlayerQuality();
+
             if (!/^https?:\/\//i.test(videoUrl || '')) {
                 showError('播放地址无效，请重新选择片源或剧集');
                 return;
@@ -1154,6 +1373,8 @@
                     type: 'hls',
                     customType: {
                         hls: function(video, player) {
+                            resetPlayerQuality();
+
                             // 清理之前的HLS实例
                             if (currentHls && currentHls.destroy) {
                                 try {
@@ -1222,9 +1443,18 @@
                             video.disableRemotePlayback = false;
                             
                             hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                                syncPlayerQuality(hls, video);
                                 video.play().catch(e => {
                                     console.warn('自动播放被阻止:', e);
                                 });
+                            });
+
+                            hls.on(Hls.Events.LEVEL_SWITCHED, function() {
+                                syncPlayerQuality(hls, video);
+                            });
+
+                            video.addEventListener('loadedmetadata', function() {
+                                syncPlayerQuality(hls, video);
                             });
                             
                             hls.on(Hls.Events.ERROR, function(event, data) {
@@ -1320,6 +1550,15 @@
                     }
             }
             });
+            const originalNotice = dp.notice.bind(dp);
+            dp.notice = function(message, duration, opacity) {
+                const noticeText = String(message || '').trim();
+                if (/^(快进|快退|后退|快進|後退)\s*[\d.,]+\s*(秒|s)?$/i.test(noticeText)) {
+                    return;
+                }
+                return originalNotice(message, duration, opacity);
+            };
+
             // 全屏模式下锁定横屏
             dp.on('fullscreen', () => {
                 if (window.screen.orientation && window.screen.orientation.lock) {
@@ -1599,8 +1838,9 @@
         }
 
         // 播放指定集数
-        function playEpisode(index, options = {}) {
+        async function playEpisode(index, options = {}) {
             const shouldUpdateHistory = options.updateHistory !== false;
+            const shouldSaveProgress = options.saveProgress !== false;
             const requestedUrl = options.url || currentEpisodes[index];
 
             // 确保index在有效范围内
@@ -1612,7 +1852,7 @@
             }
             
             // 保存当前播放进度（如果正在播放）
-            if (dp && dp.video && !dp.video.paused && !videoHasEnded) {
+            if (shouldSaveProgress && dp && dp.video && !videoHasEnded) {
                 saveCurrentProgress();
             }
             
@@ -1630,8 +1870,28 @@
                 <div class="loading-spinner"></div>
                 <div>正在加载视频...</div>
             `;
-            
-            const url = requestedUrl;
+
+            const requestId = ++episodePlaybackRequestId;
+            let url = requestedUrl;
+            if (isSharePageUrl(requestedUrl)) {
+                document.getElementById('loading').innerHTML = `
+                    <div class="loading-spinner"></div>
+                    <div>正在解析视频地址...</div>
+                `;
+                try {
+                    url = await resolvePlayableVideoUrl(requestedUrl);
+                } catch (error) {
+                    if (requestId !== episodePlaybackRequestId) return;
+                    console.error('解析分享页视频地址失败:', error);
+                    showError('无法从该分享页解析出视频地址，请切换其他片源');
+                    return;
+                }
+                if (requestId !== episodePlaybackRequestId) return;
+            }
+
+            // 取消上一集尚未完成的恢复，避免旧回调影响新剧集
+            cancelPlaybackRestore();
+            playerTransitionInProgress = true;
             currentEpisodeIndex = index;
             videoHasEnded = false; // 重置视频结束标志
             
@@ -1644,18 +1904,29 @@
             if (shouldUpdateHistory) {
                 const newUrl = new URL(window.location.href);
                 newUrl.searchParams.set('index', index);
-                newUrl.searchParams.set('url', url);
+                newUrl.searchParams.set('url', requestedUrl);
                 if (sourceName) {
                     newUrl.searchParams.set('source', sourceName);
                 }
                 if (sourceCode) {
                     newUrl.searchParams.set('source_code', sourceCode);
                 }
-                window.history.pushState({ episodeIndex: index, videoUrl: url }, '', newUrl);
+                window.history.pushState({
+                    episodeIndex: index,
+                    videoUrl: requestedUrl,
+                    playbackPosition: 0
+                }, '', newUrl);
             }
             
             // 更新播放器
             if (dp) {
+                if (options.restorePosition) {
+                    restorePlaybackPosition(
+                        options.position ?? getSavedPlaybackPosition(currentVideoTitle, index),
+                        { index: index, url: requestedUrl }
+                    );
+                }
+
                 try {
                     dp.switchVideo({
                         url: url,
@@ -1678,6 +1949,12 @@
                 }
             } else {
                 initPlayer(url, sourceCode);
+                if (options.restorePosition) {
+                    restorePlaybackPosition(
+                        options.position ?? getSavedPlaybackPosition(currentVideoTitle, index),
+                        { index: index, url: requestedUrl }
+                    );
+                }
             }
             
             // 更新UI
@@ -1687,6 +1964,10 @@
 
             // 重置用户点击位置记录
             userClickedPosition = null;
+
+            window.setTimeout(() => {
+                playerTransitionInProgress = false;
+            }, 1200);
             
             // 三秒后保存到历史记录
             setTimeout(() => saveToHistory(), 3000);
@@ -1695,6 +1976,8 @@
         // 同步浏览器前进/后退与剧集播放状态
         function handleHistoryNavigation() {
             if (!currentEpisodes.length) return;
+
+            saveCurrentProgress({ updateHistoryState: false });
 
             const urlParams = new URLSearchParams(window.location.search);
             const targetUrl = urlParams.get('url');
@@ -1709,10 +1992,19 @@
             } else if (index < 0 || index >= currentEpisodes.length || currentEpisodes[index] !== targetUrl) {
                 const matchedIndex = currentEpisodes.indexOf(targetUrl);
                 if (matchedIndex === -1) {
-                    console.warn('历史记录中的剧集不在当前列表中，忽略本次导航');
-                    return;
+                    if (index < 0 || index >= currentEpisodes.length || !/^https?:\/\//i.test(targetUrl)) {
+                        console.warn('历史记录中的剧集无效，忽略本次导航');
+                        return;
+                    }
+                    currentEpisodes[index] = targetUrl;
+                    try {
+                        localStorage.setItem('currentEpisodes', JSON.stringify(currentEpisodes));
+                    } catch (error) {
+                        console.warn('更新历史剧集地址失败:', error);
+                    }
+                } else {
+                    index = matchedIndex;
                 }
-                index = matchedIndex;
             }
 
             const resolvedUrl = targetUrl || currentEpisodes[index];
@@ -1723,7 +2015,22 @@
                 return;
             }
 
-            playEpisode(index, { url: resolvedUrl, updateHistory: false });
+            const historyState = window.history.state;
+            const statePosition = historyState
+                && historyState.episodeIndex === index
+                && Number.isFinite(Number(historyState.playbackPosition))
+                ? Number(historyState.playbackPosition)
+                : null;
+            const savedPosition = statePosition > 1
+                ? statePosition
+                : getSavedPlaybackPosition(currentVideoTitle, index);
+            playEpisode(index, {
+                url: resolvedUrl,
+                updateHistory: false,
+                saveProgress: false,
+                restorePosition: true,
+                position: savedPosition
+            });
         }
 
         // 播放上一集
@@ -1764,6 +2071,305 @@
                 orderIcon.style.transform = episodesReversed ? 'rotate(180deg)' : '';
             }
         }
+
+        function resetPlayerQuality() {
+            playerQualityState = {
+                levels: [],
+                selectedLevel: -1,
+                activeLevel: -1,
+                auto: true,
+                current: null
+            };
+            closeQualityMenu();
+
+            const control = document.getElementById('qualityControl');
+            const toggle = document.getElementById('qualityToggle');
+            const label = document.getElementById('qualityLabel');
+            if (control) control.hidden = true;
+            if (label) label.textContent = '自动';
+            if (toggle) {
+                toggle.classList.remove('is-static');
+                toggle.setAttribute('aria-expanded', 'false');
+                toggle.setAttribute('aria-disabled', 'false');
+                toggle.title = '清晰度';
+            }
+        }
+
+        function getQualityDimensions(level, video) {
+            return {
+                width: Number(level && level.width) || Number(video && video.videoWidth) || 0,
+                height: Number(level && level.height) || Number(video && video.videoHeight) || 0
+            };
+        }
+
+        function formatQualityTier(level, video) {
+            const { width, height } = getQualityDimensions(level, video);
+            if (!width || !height) return '';
+
+            const pixels = width * height;
+            const tiers = [
+                [3840 * 2160 * 0.8, '4K'],
+                [2560 * 1440 * 0.8, '2K'],
+                [1920 * 1080 * 0.8, '1080P'],
+                [1280 * 720 * 0.8, '720P'],
+                [854 * 480 * 0.8, '480P'],
+                [640 * 360 * 0.8, '360P']
+            ];
+            for (const [minimumPixels, label] of tiers) {
+                if (pixels >= minimumPixels) return label;
+            }
+            return `${height}P`;
+        }
+
+        function formatQualityBitrate(bitrate) {
+            const value = Number(bitrate) || 0;
+            if (!value) return '';
+            if (value >= 1000000) {
+                return `${(value / 1000000).toFixed(1).replace(/\.0$/, '')} Mbps`;
+            }
+            return `${Math.round(value / 1000)} Kbps`;
+        }
+
+        function formatQualityDetails(level, video) {
+            if (!level) return '';
+            const { width, height } = getQualityDimensions(level, video);
+            const parts = [];
+            if (width && height) parts.push(`${width}×${height}`);
+            const bitrate = formatQualityBitrate(level.bitrate);
+            if (bitrate) parts.push(bitrate);
+            return parts.join(' · ');
+        }
+
+        function getQualityLevelName(level, video, index = -1) {
+            if (!level) return '自动';
+            return formatQualityTier(level, video)
+                || level.name
+                || (index >= 0 ? `档位 ${index + 1}` : '自动');
+        }
+
+        function getQualityLevels(hls, video) {
+            return (hls && Array.isArray(hls.levels) ? hls.levels : []).map((level, index) => {
+                const dimensions = getQualityDimensions(level, video);
+                return {
+                    index,
+                    width: dimensions.width,
+                    height: dimensions.height,
+                    bitrate: Number(level.bitrate) || 0,
+                    codecs: level.codecs || '',
+                    name: level.name || ''
+                };
+            });
+        }
+
+        function getActiveHlsLevelIndex(hls) {
+            if (!hls) return -1;
+            if (Number.isInteger(hls.currentLevel) && hls.currentLevel >= 0) return hls.currentLevel;
+            if (Number.isInteger(hls.loadLevel) && hls.loadLevel >= 0) return hls.loadLevel;
+            if (Number.isInteger(hls.nextLevel) && hls.nextLevel >= 0) return hls.nextLevel;
+            return -1;
+        }
+
+        function syncPlayerQuality(hls, video) {
+            if (!hls || hls !== currentHls) return;
+
+            const levels = getQualityLevels(hls, video);
+            const manualLevel = Number.isInteger(hls.manualLevel) ? hls.manualLevel : -1;
+            const auto = manualLevel < 0;
+            const selectedLevel = auto ? -1 : manualLevel;
+            const activeLevel = getActiveHlsLevelIndex(hls);
+
+            playerQualityState = {
+                levels,
+                selectedLevel,
+                activeLevel,
+                auto,
+                current: levels[activeLevel] || levels[0] || null
+            };
+            renderQualityControl(video);
+        }
+
+        function renderQualityControl(video) {
+            const control = document.getElementById('qualityControl');
+            const toggle = document.getElementById('qualityToggle');
+            const label = document.getElementById('qualityLabel');
+            if (!control || !toggle || !label) return;
+
+            const { levels, activeLevel, selectedLevel, auto } = playerQualityState;
+            if (levels.length === 0) {
+                control.hidden = true;
+                closeQualityMenu();
+                return;
+            }
+
+            control.hidden = false;
+            const singleLevel = levels.length <= 1;
+            const active = levels[activeLevel] || levels[0] || null;
+            const activeName = getQualityLevelName(active, video, activeLevel);
+            const activeDetails = formatQualityDetails(active, video);
+
+            toggle.classList.toggle('is-static', singleLevel);
+            toggle.setAttribute('aria-disabled', String(singleLevel));
+
+            if (singleLevel) {
+                label.textContent = activeName;
+                toggle.title = activeDetails
+                    ? `当前清晰度：${activeDetails}（单一档位）`
+                    : '当前片源只有一个清晰度档位';
+                closeQualityMenu();
+                return;
+            }
+
+            if (auto) {
+                label.textContent = activeName === '自动' ? '自动' : `自动 · ${activeName}`;
+            } else {
+                const selected = levels[selectedLevel] || active;
+                label.textContent = getQualityLevelName(selected, video, selectedLevel);
+            }
+            toggle.title = activeDetails
+                ? `当前清晰度：${activeDetails}`
+                : '切换清晰度';
+
+            renderQualityMenu(video);
+        }
+
+        function createQualityOption(index, name, meta, isActive) {
+            const option = document.createElement('button');
+            option.type = 'button';
+            option.className = 'quality-option';
+            option.setAttribute('role', 'option');
+            option.setAttribute('aria-selected', String(isActive));
+            if (isActive) option.classList.add('is-active');
+
+            const nameElement = document.createElement('span');
+            nameElement.className = 'quality-option-name';
+            nameElement.textContent = name;
+
+            const metaElement = document.createElement('span');
+            metaElement.className = 'quality-option-meta';
+            metaElement.textContent = meta;
+
+            const stateElement = document.createElement('span');
+            stateElement.className = 'quality-option-state';
+            stateElement.textContent = isActive ? '当前' : '';
+
+            option.append(nameElement, metaElement, stateElement);
+            option.addEventListener('click', function(event) {
+                event.stopPropagation();
+                selectQualityLevel(index);
+            });
+            return option;
+        }
+
+        function renderQualityMenu(video) {
+            const menu = document.getElementById('qualityMenu');
+            if (!menu || !qualityMenuOpen) return;
+
+            const { levels, activeLevel, selectedLevel, auto } = playerQualityState;
+            const active = levels[activeLevel] || levels[0] || null;
+            const activeDetails = formatQualityDetails(active, video);
+            menu.replaceChildren();
+
+            menu.appendChild(createQualityOption(
+                -1,
+                '自动',
+                activeDetails ? `当前 ${activeDetails}` : '根据当前网络自动选择',
+                auto
+            ));
+
+            levels.forEach((level, index) => {
+                const details = formatQualityDetails(level, video);
+                menu.appendChild(createQualityOption(
+                    index,
+                    getQualityLevelName(level, video, index),
+                    details || `档位 ${index + 1}`,
+                    !auto && selectedLevel === index
+                ));
+            });
+        }
+
+        function toggleQualityMenu(event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            if (playerQualityState.levels.length <= 1) return;
+            if (qualityMenuOpen) {
+                closeQualityMenu(true);
+            } else {
+                openQualityMenu();
+            }
+        }
+
+        function openQualityMenu() {
+            const menu = document.getElementById('qualityMenu');
+            const toggle = document.getElementById('qualityToggle');
+            if (!menu || !toggle) return;
+
+            qualityMenuOpen = true;
+            menu.hidden = false;
+            toggle.setAttribute('aria-expanded', 'true');
+            renderQualityMenu(dp && dp.video);
+
+            if (!menu.dataset.keyboardBound) {
+                menu.dataset.keyboardBound = 'true';
+                menu.addEventListener('keydown', function(event) {
+                    const options = [...menu.querySelectorAll('.quality-option')];
+                    const currentIndex = options.indexOf(document.activeElement);
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        const direction = event.key === 'ArrowDown' ? 1 : -1;
+                        const nextIndex = currentIndex < 0
+                            ? 0
+                            : (currentIndex + direction + options.length) % options.length;
+                        options[nextIndex]?.focus();
+                    } else if (event.key === 'Home' || event.key === 'End') {
+                        event.preventDefault();
+                        options[event.key === 'Home' ? 0 : options.length - 1]?.focus();
+                    }
+                });
+            }
+
+            requestAnimationFrame(() => {
+                const activeOption = menu.querySelector('.quality-option.is-active')
+                    || menu.querySelector('.quality-option');
+                activeOption?.focus();
+            });
+        }
+
+        function closeQualityMenu(restoreFocus = false) {
+            const menu = document.getElementById('qualityMenu');
+            const toggle = document.getElementById('qualityToggle');
+            qualityMenuOpen = false;
+            if (menu) menu.hidden = true;
+            if (toggle) toggle.setAttribute('aria-expanded', 'false');
+            if (restoreFocus && toggle && !toggle.classList.contains('is-static')) {
+                toggle.focus();
+            }
+        }
+
+        function selectQualityLevel(levelIndex) {
+            if (!currentHls) return;
+
+            if (levelIndex < 0) {
+                currentHls.currentLevel = -1;
+            } else if (levelIndex < playerQualityState.levels.length) {
+                currentHls.currentLevel = levelIndex;
+            }
+            closeQualityMenu(true);
+            syncPlayerQuality(currentHls, dp && dp.video);
+        }
+
+        function getPlaybackQualityInfo() {
+            const { levels, selectedLevel, activeLevel, auto, current } = playerQualityState;
+            return {
+                auto,
+                selectedLevel,
+                activeLevel,
+                current: current ? { ...current } : null,
+                levels: levels.map(level => ({ ...level }))
+            };
+        }
+        window.getPlaybackQualityInfo = getPlaybackQualityInfo;
 
         // 设置进度条准确点击处理
         function setupProgressBarPreciseClicks() {
@@ -1980,7 +2586,181 @@
         }
         
         // 保存当前播放进度
-        function saveCurrentProgress() {
+        function updateCurrentHistoryState(currentTime, duration, videoUrl) {
+            const safeTime = Number(currentTime);
+            const safeDuration = Number(duration);
+            const nextState = {
+                ...(window.history.state || {}),
+                episodeIndex: currentEpisodeIndex,
+                videoUrl: videoUrl || currentEpisodes[currentEpisodeIndex] || '',
+                playbackPosition: Number.isFinite(safeTime) && safeTime > 0 ? safeTime : 0
+            };
+            if (Number.isFinite(safeDuration) && safeDuration > 0) {
+                nextState.duration = safeDuration;
+            }
+            window.history.replaceState(nextState, '', window.location.href);
+        }
+
+        function getSavedPlaybackPosition(title, index) {
+            try {
+                const key = `videoProgress_${encodeURIComponent(title)}_${index}`;
+                const saved = JSON.parse(localStorage.getItem(key) || 'null');
+                const position = Number(saved && saved.position);
+                const duration = Number(saved && saved.duration);
+                if (!Number.isFinite(position) || position < 1) return 0;
+                if (Number.isFinite(duration) && duration > 0 && position >= duration - 1) {
+                    return 0;
+                }
+                return position;
+            } catch (error) {
+                console.warn('读取剧集播放进度失败:', error);
+                return 0;
+            }
+        }
+
+        function cancelPlaybackRestore() {
+            playbackRestoreToken += 1;
+            if (playbackRestoreTimer !== null) {
+                clearTimeout(playbackRestoreTimer);
+                playbackRestoreTimer = null;
+            }
+            const cleanup = playbackRestoreCleanup;
+            playbackRestoreCleanup = null;
+            if (typeof cleanup === 'function') {
+                cleanup();
+            }
+        }
+
+        function restorePlaybackPosition(position, context = {}) {
+            const resumePosition = Number(position);
+            const targetIndex = Number.isInteger(context.index) ? context.index : currentEpisodeIndex;
+            const targetUrl = context.url || currentEpisodes[targetIndex] || '';
+            if (!Number.isFinite(resumePosition) || resumePosition < 1 || !dp || !dp.video) return;
+
+            cancelPlaybackRestore();
+
+            const video = dp.video;
+            const restoreToken = playbackRestoreToken;
+            const initialSource = video.currentSrc || video.src || '';
+            const startedAt = Date.now();
+            let metadataReady = false;
+            let positionApplied = false;
+            let hintShown = false;
+            let attempts = 0;
+            let finished = false;
+
+            const isCurrentPlayback = function() {
+                return restoreToken === playbackRestoreToken
+                    && dp
+                    && dp.video === video
+                    && currentEpisodeIndex === targetIndex
+                    && (!targetUrl || currentEpisodes[targetIndex] === targetUrl);
+            };
+
+            const cleanup = function() {
+                if (finished) return;
+                finished = true;
+                video.removeEventListener('loadedmetadata', handleMetadata);
+                video.removeEventListener('loadeddata', handleMetadata);
+                video.removeEventListener('canplay', handleMetadata);
+                video.removeEventListener('durationchange', handleMetadata);
+                if (playbackRestoreTimer !== null) {
+                    clearTimeout(playbackRestoreTimer);
+                    playbackRestoreTimer = null;
+                }
+                if (playbackRestoreCleanup === cleanup) {
+                    playbackRestoreCleanup = null;
+                }
+            };
+
+            const scheduleRestore = function(delay) {
+                if (finished) return;
+                if (playbackRestoreTimer !== null) {
+                    clearTimeout(playbackRestoreTimer);
+                }
+                playbackRestoreTimer = setTimeout(tryApplyPosition, delay);
+            };
+
+            const tryApplyPosition = function() {
+                playbackRestoreTimer = null;
+                if (finished) return;
+                if (!isCurrentPlayback()) {
+                    cleanup();
+                    return;
+                }
+
+                attempts += 1;
+                if (attempts > 24 || Date.now() - startedAt > 12000) {
+                    cleanup();
+                    return;
+                }
+
+                const currentSource = video.currentSrc || video.src || '';
+                if (!metadataReady && currentSource !== initialSource && video.readyState >= 1) {
+                    metadataReady = true;
+                }
+                if (!metadataReady) {
+                    scheduleRestore(250);
+                    return;
+                }
+
+                const duration = Number(video.duration);
+                if (!Number.isFinite(duration) || duration <= 0) {
+                    scheduleRestore(400);
+                    return;
+                }
+                if (resumePosition >= duration - 1) {
+                    cleanup();
+                    return;
+                }
+                if (video.readyState < 1) {
+                    scheduleRestore(250);
+                    return;
+                }
+
+                const seekPosition = Math.min(resumePosition, Math.max(0, duration - 0.5));
+                if (Math.abs(video.currentTime - seekPosition) <= 2) {
+                    if (video.seeking) {
+                        scheduleRestore(500);
+                    } else {
+                        cleanup();
+                    }
+                    return;
+                }
+
+                try {
+                    dp.seek(seekPosition);
+                    positionApplied = true;
+                    if (!hintShown && seekPosition >= 10) {
+                        hintShown = true;
+                        showPositionRestoreHint(seekPosition);
+                    }
+                } catch (error) {
+                    console.warn('恢复播放进度失败:', error);
+                    cleanup();
+                    return;
+                }
+
+                if (positionApplied) {
+                    scheduleRestore(600);
+                }
+            };
+
+            const handleMetadata = function() {
+                metadataReady = true;
+                tryApplyPosition();
+            };
+
+            playbackRestoreCleanup = cleanup;
+            video.addEventListener('loadedmetadata', handleMetadata);
+            video.addEventListener('loadeddata', handleMetadata);
+            video.addEventListener('canplay', handleMetadata);
+            video.addEventListener('durationchange', handleMetadata);
+            scheduleRestore(80);
+        }
+
+        function saveCurrentProgress(options = {}) {
+            if (playerTransitionInProgress) return;
             if (!dp || !dp.video) return;
             const currentTime = dp.video.currentTime;
             const duration = dp.video.duration;
@@ -1995,6 +2775,9 @@
             };
             try {
                 localStorage.setItem(progressKey, JSON.stringify(progressData));
+                if (options.updateHistoryState !== false) {
+                    updateCurrentHistoryState(currentTime, duration);
+                }
                 // --- 新增：同步更新 viewingHistory 中的进度 ---
                 try {
                     const historyRaw = localStorage.getItem('viewingHistory');

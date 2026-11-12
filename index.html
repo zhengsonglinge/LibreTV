@@ -22,18 +22,26 @@
     <meta property="twitter:description" content="搜索并观看来自多个视频源的内容，支持多种设备，无需注册即可使用。">
 
     <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="image/logo.svg" type="image/svg+xml">
+    <link rel="icon" href="image/logo-32.png" type="image/png" sizes="32x32">
+    <link rel="apple-touch-icon" href="image/logo-192.png" sizes="192x192">
     
     <!-- Canonical URL -->
     <link rel="canonical" href="https://libretv.is-an.org/">
     
     <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
     <link rel="stylesheet" href="css/styles.css?v=20261113sourcenetwork2">
-    <link rel="stylesheet" href="css/home.css?v=20261113loadmore1">
+    <link rel="stylesheet" href="css/home.css?v=20261113logo1">
 </head>
 <body class="page-bg text-white">
     <header class="site-header">
         <div class="site-container site-header-inner">
-            <a href="#" onclick="resetToHome(); return false;" class="header-nav-link">发现</a>
+            <div class="header-leading">
+                <a href="#" onclick="resetToHome(); return false;" class="header-brand" aria-label="返回首页">
+                    <img src="image/logo.svg" alt="">
+                </a>
+                <a href="#" onclick="resetToHome(); return false;" class="header-nav-link">发现</a>
+            </div>
             <nav class="header-actions" aria-label="快捷操作">
                 <button onclick="toggleHistory(event)" class="header-action" aria-label="观看历史">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
