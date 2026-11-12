@@ -30,126 +30,175 @@ const API_SITES = {
         api: 'http://caiji.dyttzyapi.com',
         name: '电影天堂资源',
         detail: 'http://caiji.dyttzyapi.com',
+        network: 'direct',
     },
     ffzy: {
         api: 'http://ffzy5.tv',
         name: '非凡影视',
         detail: 'http://ffzy5.tv',
+        network: 'direct',
     },
     ckzy: {
         api: 'https://www.ckzy1.com',
         name: 'CK资源',
-        adult: true
+        adult: true,
+        network: 'direct'
     },
     zy360: {
         api: 'https://360zy.com',
         name: '360资源',
+        network: 'direct',
     },
     hwba: {
         api: 'https://cjhwba.com',
         name: '华为吧资源',
+        network: 'unavailable',
     },
     jisu: {
         api: 'https://jszyapi.com',
         name: '极速资源',
-        detail: 'https://jszyapi.com'
+        detail: 'https://jszyapi.com',
+        network: 'direct',
     },
     bfzy: {
         api: 'https://bfzyapi.com',
         name: '暴风资源',
+        network: 'direct',
     },
     mdzy: {
         api: 'https://www.mdzyapi.com',
         name: '魔都资源',
+        network: 'direct',
     },
     ruyi: {
         api: 'https://cj.rycjapi.com',
         name: '如意资源',
+        network: 'vpn',
     },
     jkun: {
         api: 'https://jkunzyapi.com',
         name: 'jkun资源',
-        adult: true
+        adult: true,
+        network: 'vpn'
     },
     souav: {
         api: 'https://api.souavzy.vip',
         name: 'souav资源',
-        adult: true
+        adult: true,
+        network: 'vpn'
     },
     r155: {
         api: 'https://155api.com',
         name: '155资源',
-        adult: true
+        adult: true,
+        network: 'direct'
     },
     lsb: {
         api: 'https://apilsbzy1.com',
         name: 'lsb资源',
-        adult: true
+        adult: true,
+        network: 'direct'
     },
     huangcang: {
         api: 'https://hsckzy.vip',
         name: '黄色仓库',
         adult: true,
-        detail: 'https://hsckzy.vip'
+        detail: 'https://hsckzy.vip',
+        network: 'vpn'
     },
     zuid: {
         api: 'https://api.zuidapi.com',
-        name: '最大资源'
+        name: '最大资源',
+        network: 'direct'
     },
     yutu: {
         api: 'https://yutuzy10.com',
         name: '玉兔资源',
-        adult: true
+        adult: true,
+        network: 'direct'
     },
     yinghua: {
         api: 'https://m3u8.apiyhzy.com',
-        name: '樱花资源'
+        name: '樱花资源',
+        network: 'unavailable'
     },
     baidu: {
         api: 'https://api.apibdzy.com',
-        name: '百度云资源'
+        name: '百度云资源',
+        network: 'direct'
     },
     wujin: {
         api: 'https://api.wujinapi.me',
-        name: '无尽资源'
+        name: '无尽资源',
+        network: 'vpn'
     },
     lzi: {
         api: 'https://cj.lziapi.com',
-        name: '量子资源'
+        name: '量子资源',
+        network: 'direct'
     },
     guangsu: {
         api: 'https://api.guangsuapi.com',
-        name: '光速资源'
+        name: '光速资源',
+        network: 'direct'
     },
     hongniu: {
         api: 'https://www.hongniuzy2.com',
-        name: '红牛资源'
+        name: '红牛资源',
+        network: 'direct'
     },
     jinying: {
         api: 'https://jinyingzy.com',
-        name: '金鹰资源'
+        name: '金鹰资源',
+        network: 'direct'
     },
     huya: {
         api: 'https://www.huyaapi.com',
-        name: '虎牙资源'
+        name: '虎牙资源',
+        network: 'direct'
     },
     subo: {
         api: 'https://subocaiji.com',
-        name: '速播资源'
+        name: '速播资源',
+        network: 'direct'
     },
     changzhang: {
         api: 'https://api.changzhang.tv',
-        name: '厂长资源'
+        name: '厂长资源',
+        network: 'direct'
     },
     maoyan: {
         api: 'https://api.maoyanapi.top',
-        name: '猫眼资源'
+        name: '猫眼资源',
+        network: 'direct'
     },
     zuidazy: {
         api: 'https://zuidazy.me',
-        name: '最大点播'
+        name: '最大点播',
+        network: 'vpn'
     },
 };
+
+const SOURCE_NETWORK_META = {
+    direct: {
+        label: '直连',
+        description: '国内网络可直接搜索和播放'
+    },
+    vpn: {
+        label: 'VPN',
+        description: '搜索和播放需要 VPN 或海外代理'
+    },
+    unavailable: {
+        label: '不可用',
+        description: '当前检测无法正常搜索或播放'
+    }
+};
+
+function getSourceNetworkMeta(sourceId) {
+    const source = API_SITES[sourceId];
+    if (!source || !source.network) return null;
+    return SOURCE_NETWORK_META[source.network] || null;
+}
 
 // 添加聚合搜索的配置选项
 const AGGREGATED_SEARCH_CONFIG = {
@@ -157,8 +206,6 @@ const AGGREGATED_SEARCH_CONFIG = {
     timeout: 8000,             // 单个源超时时间（毫秒）
     totalTimeout: 12000,       // 整轮搜索的兜底超时，需大于单源超时
     maxResults: 300,           // 最多保留的结果数量
-    initialRenderLimit: 60,    // 首次展示的结果数量
-    renderBatchSize: 60,       // 每次“加载更多”增加的数量
     parallelRequests: true,   // 是否并行请求所有源
     showSourceBadges: true    // 是否显示来源徽章
 };

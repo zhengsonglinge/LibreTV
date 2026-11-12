@@ -584,6 +584,52 @@ body {
     background-color: #2a2a2a;
 }
 
+.source-option-label {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+}
+
+.source-option-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.source-network-tag {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    margin-left: 5px;
+    padding: 1px 5px;
+    border: 1px solid transparent;
+    border-radius: 99px;
+    font-size: 0.52rem;
+    font-weight: 700;
+    line-height: 1.45;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.source-network-tag.is-direct {
+    border-color: rgba(31, 109, 75, 0.18);
+    color: #1f6d4b;
+    background: rgba(42, 157, 103, 0.1);
+}
+
+.source-network-tag.is-vpn {
+    border-color: rgba(57, 85, 200, 0.18);
+    color: #3955c8;
+    background: rgba(57, 85, 200, 0.09);
+}
+
+.source-network-tag.is-unavailable {
+    border-color: rgba(156, 69, 64, 0.18);
+    color: #9c4540;
+    background: rgba(184, 74, 65, 0.1);
+}
+
 /* 成人内容标签样式 */
 .adult-tag {
     display: inline-flex;

@@ -8,8 +8,8 @@
     <link rel="manifest" href="manifest.json">
 
     <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
-    <link rel="stylesheet" href="css/styles.css?v=20261112sources1">
-    <link rel="stylesheet" href="css/player.css?v=20261112nodiag1">
+    <link rel="stylesheet" href="css/styles.css?v=20261113sourcenetwork2">
+    <link rel="stylesheet" href="css/player.css?v=20261113sourcenetwork2">
 </head>
 <body class="player-page">
     <header class="player-header">
@@ -161,7 +161,7 @@
     <script src="libs/hls.min.js?v=20261112sources1" crossorigin="anonymous"></script>
     <script src="libs/DPlayer.min.js?v=20261112sources1" crossorigin="anonymous"></script>
 
-    <script src="js/config.js?v=20261112playercache1"></script>
+    <script src="js/config.js?v=20261113bfzydirect1"></script>
     <script src="js/password.js?v=20261112sources1"></script>
     <script src="js/api.js?v=20261112sourceswitch1"></script>
 
@@ -457,6 +457,7 @@
                 sourceId,
                 sourceName: site.name,
                 apiUrl: site.api,
+                network: site.network || '',
                 isCustom: false
             };
         }
@@ -667,9 +668,11 @@
         }
 
         function getCurrentSourceSwitchItem() {
+            const currentSite = API_SITES[currentSourceCode];
             return {
                 sourceId: currentSourceCode || 'current',
                 sourceName: currentSourceName || '当前片源',
+                network: currentSite ? currentSite.network || '' : '',
                 matchedTitle: currentVideoTitle,
                 episodes: currentEpisodes,
                 isCurrent: true
@@ -733,19 +736,30 @@
 
             const name = document.createElement('span');
             name.className = 'source-switch-name';
-            name.textContent = item.sourceName;
+            const nameText = document.createElement('span');
+            nameText.className = 'source-switch-name-text';
+            nameText.textContent = item.sourceName;
+            name.appendChild(nameText);
 
             const meta = document.createElement('span');
             meta.className = 'source-switch-meta';
             const episodeCount = Array.isArray(item.episodes) ? item.episodes.length : 0;
+            const networkMeta = SOURCE_NETWORK_META[item.network];
+            if (networkMeta) {
+                const networkTag = document.createElement('span');
+                networkTag.className = `source-network-tag is-${item.network}`;
+                networkTag.title = networkMeta.description;
+                networkTag.textContent = networkMeta.label;
+                meta.append(networkTag, document.createTextNode(' · '));
+            }
             if (item.isPending) {
-                meta.textContent = '正在检查可用剧集…';
+                meta.append('正在检查可用剧集…');
             } else if (item.isCurrent) {
-                meta.textContent = `正在播放 · 共 ${episodeCount} 集`;
+                meta.append(`正在播放 · 共 ${episodeCount} 集`);
             } else if (item.matchedTitle && normalizeSwitchTitle(item.matchedTitle) !== normalizeSwitchTitle(currentVideoTitle)) {
-                meta.textContent = `匹配「${item.matchedTitle}」 · 共 ${episodeCount} 集`;
+                meta.append(`匹配「${item.matchedTitle}」 · 共 ${episodeCount} 集`);
             } else {
-                meta.textContent = `共 ${episodeCount} 集`;
+                meta.append(`共 ${episodeCount} 集`);
             }
 
             const state = document.createElement('span');
@@ -1086,7 +1100,10 @@
 
         // 初始化播放器
         function initPlayer(videoUrl, sourceCode) {
-            if (!videoUrl) return;
+            if (!/^https?:\/\//i.test(videoUrl || '')) {
+                showError('播放地址无效，请重新选择片源或剧集');
+                return;
+            }
 
             // 配置HLS.js选项
             const hlsConfig = {
@@ -1159,12 +1176,22 @@
                             // 限制启动阶段的自动恢复次数，避免源失效时无限重试
                             let networkRecoveryCount = 0;
                             let mediaRecoveryCount = 0;
+                            let playbackNoticeCleanupTimer = null;
+
+                            function clearStalePlaybackNotice() {
+                                if (typeof player.notice === 'function') {
+                                    player.notice('', 0, 0);
+                                }
+                            }
                             
                             // 监听视频播放事件
                             video.addEventListener('playing', function() {
                                 playbackStarted = true;
                                 document.getElementById('loading').style.display = 'none';
                                 document.getElementById('error').style.display = 'none';
+                                clearStalePlaybackNotice();
+                                clearTimeout(playbackNoticeCleanupTimer);
+                                playbackNoticeCleanupTimer = setTimeout(clearStalePlaybackNotice, 1200);
                             });
                             
                             // 监听视频进度事件
@@ -1172,16 +1199,26 @@
                                 if (video.currentTime > 1) {
                                     // 视频进度超过1秒，隐藏错误（如果存在）
                                     document.getElementById('error').style.display = 'none';
+                                    if (playbackNoticeCleanupTimer) {
+                                        clearTimeout(playbackNoticeCleanupTimer);
+                                        playbackNoticeCleanupTimer = null;
+                                        clearStalePlaybackNotice();
+                                    }
                                 }
                             });
 
-                            hls.loadSource(video.src);
+                            const sourceUrl = video.src || videoUrl;
+                            if (!/^https?:\/\//i.test(sourceUrl)) {
+                                showError('播放地址无效，请重新选择片源或剧集');
+                                hls.destroy();
+                                currentHls = null;
+                                return;
+                            }
+
                             hls.attachMedia(video);
+                            hls.loadSource(sourceUrl);
                             
                             // enable airplay, from https://github.com/video-dev/hls.js/issues/5989
-                            const source = document.createElement('source');
-                            source.src = videoUrl;
-                            video.appendChild(source);
                             video.disableRemotePlayback = false;
                             
                             hls.on(Hls.Events.MANIFEST_PARSED, function() {
@@ -1567,7 +1604,8 @@
             const requestedUrl = options.url || currentEpisodes[index];
 
             // 确保index在有效范围内
-            if (!Number.isInteger(index) || index < 0 || index >= currentEpisodes.length || !requestedUrl) {
+            if (!Number.isInteger(index) || index < 0 || index >= currentEpisodes.length
+                || !/^https?:\/\//i.test(requestedUrl || '')) {
                 console.error(`无效的剧集索引: ${index}, 当前剧集数量: ${currentEpisodes.length}`);
                 showToast(`无效的剧集索引: ${index + 1}，当前剧集总数: ${currentEpisodes.length}`);
                 return;

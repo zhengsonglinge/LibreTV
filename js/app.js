@@ -131,6 +131,7 @@ function initAPICheckboxes() {
         if (api.adult) return; // 跳过成人内容API，稍后添加
 
         const checked = selectedAPIs.includes(apiKey);
+        const networkTag = renderSourceNetworkTag(apiKey);
 
         const checkbox = document.createElement('div');
         checkbox.className = 'flex items-center';
@@ -139,7 +140,10 @@ function initAPICheckboxes() {
                    class="form-checkbox h-3 w-3 text-blue-600 bg-[#222] border border-[#333]" 
                    ${checked ? 'checked' : ''} 
                    data-api="${apiKey}">
-            <label for="api_${apiKey}" class="ml-1 text-xs text-gray-400 truncate">${api.name}</label>
+            <label for="api_${apiKey}" class="source-option-label ml-1 text-xs text-gray-400">
+                <span class="source-option-name">${api.name}</span>
+                ${networkTag}
+            </label>
         `;
         normaldiv.appendChild(checkbox);
 
@@ -183,6 +187,7 @@ function addAdultAPI() {
             if (!api.adult) return; // 仅添加成人内容API
 
             const checked = selectedAPIs.includes(apiKey);
+            const networkTag = renderSourceNetworkTag(apiKey);
 
             const checkbox = document.createElement('div');
             checkbox.className = 'flex items-center';
@@ -191,7 +196,10 @@ function addAdultAPI() {
                        class="form-checkbox h-3 w-3 text-blue-600 bg-[#222] border border-[#333] api-adult" 
                        ${checked ? 'checked' : ''} 
                        data-api="${apiKey}">
-                <label for="api_${apiKey}" class="ml-1 text-xs text-pink-400 truncate">${api.name}</label>
+                <label for="api_${apiKey}" class="source-option-label ml-1 text-xs text-pink-400">
+                    <span class="source-option-name">${api.name}</span>
+                    ${networkTag}
+                </label>
             `;
             adultdiv.appendChild(checkbox);
 
@@ -630,10 +638,8 @@ function resetSearchArea() {
     document.getElementById('searchResultsCount').textContent = '0';
     const resultsFooter = document.getElementById('resultsFooter');
     const resultsStatus = document.getElementById('searchResultsStatus');
-    const loadMoreButton = document.getElementById('loadMoreResults');
     if (resultsFooter) resultsFooter.classList.add('hidden');
     if (resultsStatus) resultsStatus.textContent = '';
-    if (loadMoreButton) loadMoreButton.classList.add('hidden');
 
     // 恢复搜索区域的样式
     document.getElementById('searchArea').classList.add('flex-1');
@@ -770,6 +776,14 @@ function calculateSearchSimilarity(query, item) {
     return titleScore * 1000 + aliasScore * 20 + metadataScore * 10;
 }
 
+function renderSourceNetworkTag(sourceId) {
+    const source = API_SITES[sourceId];
+    const meta = getSourceNetworkMeta(sourceId);
+    if (!source || !meta) return '';
+
+    return `<span class="source-network-tag is-${source.network}" title="${meta.description}">${meta.label}</span>`;
+}
+
 function sortSearchResultsByRelevance(results, query) {
     return results
         .map((item, index) => ({
@@ -792,9 +806,9 @@ function renderSearchCard(item) {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
-    const sourceInfo = item.source_name ?
-        `<span class="source-badge">${item.source_name}</span>` : '';
     const sourceCode = item.source_code || '';
+    const sourceInfo = item.source_name ?
+        `<span class="source-badge">${item.source_name}${renderSourceNetworkTag(sourceCode)}</span>` : '';
     const safeRemarks = (item.vod_remarks || '暂无简介').toString().replace(/</g, '&lt;');
     const safeType = (item.type_name || '').toString().replace(/</g, '&lt;');
     const metaParts = [safeType, item.vod_year].filter(Boolean);
@@ -827,19 +841,28 @@ function updateSearchResultSummary(run) {
     const count = document.getElementById('searchResultsCount');
     const footer = document.getElementById('resultsFooter');
     const status = document.getElementById('searchResultsStatus');
-    const loadMoreButton = document.getElementById('loadMoreResults');
-    if (!count || !footer || !status || !loadMoreButton) return;
+    const progress = document.getElementById('searchProgress');
+    const progressFill = document.getElementById('searchProgressFill');
+    if (!count || !footer || !status) return;
 
     count.textContent = run.results.length;
     footer.classList.remove('hidden');
 
-    const remaining = run.results.length - run.renderedCount;
+    if (progress && progressFill) {
+        const percentage = run.totalSources > 0
+            ? Math.min(100, Math.round((run.settledSources / run.totalSources) * 100))
+            : 0;
+        progress.hidden = run.completed;
+        progress.setAttribute('aria-valuenow', String(percentage));
+        progressFill.style.width = `${percentage}%`;
+    }
+
     const sourceSummary = run.completed
         ? `已从 ${run.settledSources}/${run.totalSources} 个来源汇总`
         : `正在从 ${run.settledSources}/${run.totalSources} 个来源汇总`;
-    status.textContent = remaining > 0
-        ? `已显示 ${run.renderedCount} / ${run.results.length} 条，${sourceSummary}`
-        : `已显示 ${run.results.length} 条，${sourceSummary}`;
+    status.textContent = run.completed
+        ? `共 ${run.results.length} 个结果，${sourceSummary}`
+        : `已找到 ${run.results.length} 个结果，${sourceSummary}`;
 
     if (run.completed && run.timedOut) {
         status.textContent += '，部分来源未在限时内返回';
@@ -848,7 +871,6 @@ function updateSearchResultSummary(run) {
         status.textContent += `，已达到 ${AGGREGATED_SEARCH_CONFIG.maxResults} 条上限`;
     }
 
-    loadMoreButton.classList.toggle('hidden', remaining <= 0);
 }
 
 function revealSearchResults() {
@@ -872,27 +894,14 @@ function resetSearchResultUi() {
     document.getElementById('searchResultsCount').textContent = '0';
     document.getElementById('resultsFooter').classList.add('hidden');
     document.getElementById('searchResultsStatus').textContent = '';
-    document.getElementById('loadMoreResults').classList.add('hidden');
     revealSearchResults();
 }
 
 function flushSearchResults(run) {
     if (!isCurrentSearchRun(run)) return;
 
-    const target = Math.min(run.results.length, run.renderLimit);
-    if (target > run.renderedCount) {
-        const items = run.results.slice(run.renderedCount, target);
-        const buffer = document.createElement('div');
-        buffer.innerHTML = items.map(renderSearchCard).join('');
-
-        const fragment = document.createDocumentFragment();
-        while (buffer.firstChild) {
-            fragment.appendChild(buffer.firstChild);
-        }
-        document.getElementById('results').appendChild(fragment);
-        run.renderedCount = target;
-        hideLoading();
-    }
+    document.getElementById('results').innerHTML = run.results.map(renderSearchCard).join('');
+    hideLoading();
 
     updateSearchResultSummary(run);
 }
@@ -946,16 +955,6 @@ function finalizeSearchResults(run) {
     updateSearchResultSummary(run);
     hideLoading();
     setSearchButtonBusy(false);
-}
-
-function loadMoreSearchResults() {
-    const run = activeSearchRun;
-    if (!isCurrentSearchRun(run)) return;
-    run.renderLimit = Math.min(
-        AGGREGATED_SEARCH_CONFIG.maxResults,
-        run.renderLimit + AGGREGATED_SEARCH_CONFIG.renderBatchSize
-    );
-    flushSearchResults(run);
 }
 
 async function searchApiSource(apiId, query, run) {
@@ -1038,8 +1037,6 @@ async function search() {
         seenKeys: new Set(),
         settledSources: 0,
         totalSources: selectedAPIs.length,
-        renderedCount: 0,
-        renderLimit: AGGREGATED_SEARCH_CONFIG.initialRenderLimit,
         deadlineId: null,
         completed: false,
         timedOut: false,
@@ -1049,8 +1046,9 @@ async function search() {
 
     activeSearchRun = run;
     setSearchButtonBusy(true);
-    showLoading('正在汇总结果…');
+    hideLoading();
     resetSearchResultUi();
+    updateSearchResultSummary(run);
 
     try {
         saveSearchHistory(query);
@@ -1262,7 +1260,7 @@ function playVideo(url, vod_name, sourceCode, episodeIndex = 0) {
             return;
         }
     }
-    if (!url) {
+    if (!/^https?:\/\//i.test(url || '')) {
         showToast('无效的视频链接', 'error');
         return;
     }

@@ -753,10 +753,19 @@ input {
 }
 
 .source-switch-name {
+    display: flex;
+    min-width: 0;
+    align-items: center;
     padding-right: 42px;
     color: var(--ink);
     font-size: 0.71rem;
     font-weight: 680;
+}
+
+.source-switch-name-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .source-switch-meta {

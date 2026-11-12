@@ -27,8 +27,8 @@
     <link rel="canonical" href="https://libretv.is-an.org/">
     
     <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
-    <link rel="stylesheet" href="css/styles.css?v=20261112sources1">
-    <link rel="stylesheet" href="css/home.css?v=20261112nodisclaimer1">
+    <link rel="stylesheet" href="css/styles.css?v=20261113sourcenetwork2">
+    <link rel="stylesheet" href="css/home.css?v=20261113loadmore1">
 </head>
 <body class="page-bg text-white">
     <header class="site-header">
@@ -216,10 +216,13 @@
                     <h2 class="results-title">搜索结果</h2>
                     <div class="results-count"><strong id="searchResultsCount">0</strong> 个结果</div>
                 </div>
+                <div id="searchProgress" class="results-progress" role="progressbar"
+                     aria-label="搜索进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+                    <span id="searchProgressFill" class="results-progress-fill"></span>
+                </div>
                 <div id="results" class="results-grid"></div>
                 <div id="resultsFooter" class="results-footer hidden">
                     <p id="searchResultsStatus" class="results-status" aria-live="polite"></p>
-                    <button id="loadMoreResults" type="button" class="results-load-more hidden" onclick="loadMoreSearchResults()">加载更多</button>
                 </div>
             </section>
         </div>
@@ -293,11 +296,11 @@
         // 保存原始 js‑sha256 实现，避免被 password.js 覆盖
         window._jsSha256 = window.sha256;
     </script>
-    <script src="js/config.js?v=20261112playercache1"></script>
-    <script src="js/ui.js?v=20261112nodisclaimer1"></script>
+    <script src="js/config.js?v=20261113bfzydirect1"></script>
+    <script src="js/ui.js?v=20261113blobguard1"></script>
     <script src="js/api.js?v=20261112sources1"></script>
     <script src="js/password.js?v=20261112sources1"></script>
-    <script src="js/app.js?v=20261112playercache1"></script>
+    <script src="js/app.js?v=20261113blobguard1"></script>
     <script src="js/douban.js?v=20261112doubancache1"></script>
 
     <!-- PWA 注册 -->

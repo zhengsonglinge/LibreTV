@@ -439,6 +439,11 @@ function deleteHistoryItem(encodedUrl) {
 // 从历史记录播放
 function playFromHistory(url, title, episodeIndex, playbackPosition = 0) {
     try {
+        if (!/^https?:\/\//i.test(url || '')) {
+            showToast('该历史记录不是有效的播放地址，请重新搜索该影片', 'error');
+            return;
+        }
+
         // 尝试从localStorage获取当前视频的集数信息
         let episodesList = [];
         
