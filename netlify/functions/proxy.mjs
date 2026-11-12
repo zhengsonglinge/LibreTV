@@ -39,6 +39,31 @@ function logDebug(message) {
     }
 }
 
+// 判断 Content-Type 是否为文本类（只有文本才可以用 text() 读取）
+function isTextContentType(contentType) {
+    if (!contentType) return false;
+    const lower = contentType.toLowerCase();
+    return lower.startsWith('text/') ||
+        lower.includes('json') ||
+        lower.includes('xml') ||
+        lower.includes('javascript') ||
+        lower.includes('mpegurl') ||
+        lower.includes('x-mpegurl');
+}
+
+// 读取响应体：文本用 text()，二进制用 arrayBuffer()，避免图片等被 UTF-8 解码破坏
+async function readResponseBody(response, contentType) {
+    if (isTextContentType(contentType)) {
+        return await response.text();
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    // 有些服务器会用 application/octet-stream 返回 M3U8，按内容头识别后转成文本
+    if (buffer.subarray(0, 16).toString('utf8').trimStart().startsWith('#EXTM3U')) {
+        return buffer.toString('utf8');
+    }
+    return buffer;
+}
+
 function getTargetUrlFromPath(encodedPath) {
     if (!encodedPath) { logDebug("getTargetUrlFromPath received empty path."); return null; }
     try {
@@ -106,7 +131,7 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
             const err = new Error(`HTTP error ${response.status}: ${response.statusText}. URL: ${targetUrl}. Body: ${errorBody.substring(0, 200)}`);
             err.status = response.status; throw err;
         }
-        const content = await response.text();
+        const content = await readResponseBody(response, response.headers.get('content-type') || '');
         const contentType = response.headers.get('content-type') || '';
         logDebug(`Fetch success: ${targetUrl}, Content-Type: ${contentType}, Length: ${content.length}`);
         return { content, contentType, responseHeaders: response.headers };
@@ -124,6 +149,8 @@ function isM3u8Content(content, contentType) {
 function processKeyLine(line, baseUrl) { return line.replace(/URI="([^"]+)"/, (match, uri) => { const absoluteUri = resolveUrl(baseUrl, uri); logDebug(`Processing KEY URI: Original='${uri}', Absolute='${absoluteUri}'`); return `URI="${rewriteUrlToProxy(absoluteUri)}"`; }); }
 function processMapLine(line, baseUrl) { return line.replace(/URI="([^"]+)"/, (match, uri) => { const absoluteUri = resolveUrl(baseUrl, uri); logDebug(`Processing MAP URI: Original='${uri}', Absolute='${absoluteUri}'`); return `URI="${rewriteUrlToProxy(absoluteUri)}"`; }); }
 function processMediaPlaylist(url, content) {
+    // 防御：若拿到二进制内容，先按 UTF-8 解码
+    if (Buffer.isBuffer(content)) { content = content.toString('utf8'); }
     const baseUrl = getBaseUrl(url); if (!baseUrl) { logDebug(`Could not determine base URL for media playlist: ${url}. Cannot process relative paths.`); }
     const lines = content.split('\n'); const output = [];
     for (let i = 0; i < lines.length; i++) {
@@ -250,11 +277,13 @@ export const handler = async (event, context) => {
              });
             netlifyHeaders['Cache-Control'] = `public, max-age=${CACHE_TTL}`; // Set our cache policy
 
+            const isBinary = Buffer.isBuffer(content);
             return {
                 statusCode: 200,
                 headers: netlifyHeaders,
-                body: content, // Body as string
-                // isBase64Encoded: false, // Set true only if returning binary data as base64
+                // Netlify 要求二进制内容以 base64 形式返回
+                body: isBinary ? content.toString('base64') : content,
+                isBase64Encoded: isBinary,
             };
         }
 

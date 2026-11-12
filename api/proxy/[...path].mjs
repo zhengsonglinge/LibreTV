@@ -40,6 +40,31 @@ const FILTER_DISCONTINUITY = false;
 
 // --- 辅助函数 ---
 
+// 判断 Content-Type 是否为文本类（只有文本才可以用 text() 读取）
+function isTextContentType(contentType) {
+    if (!contentType) return false;
+    const lower = contentType.toLowerCase();
+    return lower.startsWith('text/') ||
+        lower.includes('json') ||
+        lower.includes('xml') ||
+        lower.includes('javascript') ||
+        lower.includes('mpegurl') ||
+        lower.includes('x-mpegurl');
+}
+
+// 读取响应体：文本用 text()，二进制用 arrayBuffer()，避免图片等被 UTF-8 解码破坏
+async function readResponseBody(response, contentType) {
+    if (isTextContentType(contentType)) {
+        return await response.text();
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    // 有些服务器会用 application/octet-stream 返回 M3U8，按内容头识别后转成文本
+    if (buffer.subarray(0, 16).toString('utf8').trimStart().startsWith('#EXTM3U')) {
+        return buffer.toString('utf8');
+    }
+    return buffer;
+}
+
 function logDebug(message) {
     if (DEBUG_ENABLED) {
         console.log(`[代理日志] ${message}`);
@@ -166,10 +191,11 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
             throw err; // 抛出错误
         }
 
-        // 读取响应内容
-        const content = await response.text();
+        // 读取响应内容（文本/二进制分开处理）
         const contentType = response.headers.get('content-type') || '';
-        logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${content.length}`);
+        const content = await readResponseBody(response, contentType);
+        const contentLength = content.length;
+        logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${contentLength}`);
         // 返回结果
         return { content, contentType, responseHeaders: response.headers };
 
@@ -205,6 +231,10 @@ function processMapLine(line, baseUrl) {
  }
 
 function processMediaPlaylist(url, content) {
+    // 防御：若拿到二进制内容，先按 UTF-8 解码
+    if (Buffer.isBuffer(content)) {
+        content = content.toString('utf8');
+    }
     const baseUrl = getBaseUrl(url);
     if (!baseUrl) {
         logDebug(`无法确定媒体列表的 Base URL: ${url}，相对路径可能无法处理。`);
@@ -403,8 +433,8 @@ export default async function handler(req, res) {
             // 设置我们自己的缓存策略
             res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
 
-            // 发送原始（已解压）内容
-            res.status(200).send(content);
+            // 发送原始（已解压）内容：Buffer 直发，避免 text() 破坏二进制图片
+            res.status(200).end(content);
         }
 
     // ---- 结束主处理逻辑的 try 块 ----

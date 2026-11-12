@@ -18,6 +18,53 @@ const MEDIA_FILE_EXTENSIONS = [
 const MEDIA_CONTENT_TYPES = ['video/', 'audio/', 'image/'];
 // --- 常量结束 ---
 
+// --- 二进制安全的响应读取辅助函数 ---
+// 判断 Content-Type 是否为文本类（只有文本才可以用 text() 读取）
+function isTextContentType(contentType) {
+    if (!contentType) return false;
+    const lower = contentType.toLowerCase();
+    return lower.startsWith('text/') ||
+        lower.includes('json') ||
+        lower.includes('xml') ||
+        lower.includes('javascript') ||
+        lower.includes('mpegurl') ||
+        lower.includes('x-mpegurl');
+}
+
+// 读取响应体：文本用 text()，二进制用 arrayBuffer()，避免图片等被 UTF-8 解码破坏
+async function readResponseBody(response, contentType) {
+    if (isTextContentType(contentType)) {
+        return await response.text();
+    }
+    const buffer = await response.arrayBuffer();
+    // 有些服务器会用 application/octet-stream 返回 M3U8，按内容头识别后转成文本
+    const head = new TextDecoder().decode(new Uint8Array(buffer.slice(0, 16))).trimStart();
+    if (head.startsWith('#EXTM3U')) {
+        return new TextDecoder().decode(buffer);
+    }
+    return buffer;
+}
+
+// ArrayBuffer <-> Base64（Workers 环境没有 Buffer）
+function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+}
+
+function base64ToArrayBuffer(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
 
 /**
  * 主要的 Pages Function 处理函数
@@ -198,10 +245,11 @@ export async function onRequest(context) {
                  throw new Error(`HTTP error ${response.status}: ${response.statusText}. URL: ${targetUrl}. Body: ${errorBody.substring(0, 150)}`);
             }
 
-            // 读取响应内容为文本
-            const content = await response.text();
+            // 读取响应内容（文本/二进制分开处理）
             const contentType = response.headers.get('Content-Type') || '';
-            logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${content.length}`);
+            const content = await readResponseBody(response, contentType);
+            const contentLength = typeof content === 'string' ? content.length : content.byteLength;
+            logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${contentLength}`);
             return { content, contentType, responseHeaders: response.headers }; // 同时返回原始响应头
 
         } catch (error) {
@@ -259,6 +307,10 @@ export async function onRequest(context) {
 
     // 处理媒体 M3U8 播放列表 (包含视频/音频片段)
     function processMediaPlaylist(url, content) {
+        // 防御：若拿到二进制内容，先按 UTF-8 解码
+        if (typeof content !== 'string') {
+            content = new TextDecoder().decode(content);
+        }
         const baseUrl = getBaseUrl(url);
         const lines = content.split('\n');
         const output = [];
@@ -429,7 +481,7 @@ export async function onRequest(context) {
         logDebug(`收到代理请求: ${targetUrl}`);
 
         // --- 缓存检查 (KV) ---
-        const cacheKey = `proxy_raw:${targetUrl}`; // 使用原始内容的缓存键
+        const cacheKey = `proxy_raw_v2:${targetUrl}`; // 使用原始内容的缓存键（v2: 二进制安全，避免命中旧坏缓存）
         let kvNamespace = null;
         try {
             kvNamespace = env.LIBRETV_PROXY_KV;
@@ -445,7 +497,9 @@ export async function onRequest(context) {
                 if (cachedDataJson) {
                     logDebug(`[缓存命中] 原始内容: ${targetUrl}`);
                     const cachedData = JSON.parse(cachedDataJson); // 解析 JSON
-                    const content = cachedData.body;
+                    const content = cachedData.binary
+                        ? base64ToArrayBuffer(cachedData.body)
+                        : cachedData.body;
                     let headers = {};
                     try { headers = JSON.parse(cachedData.headers); } catch(e){} // 解析头部
                     const contentType = headers['content-type'] || headers['Content-Type'] || '';
@@ -456,7 +510,11 @@ export async function onRequest(context) {
                         return createM3u8Response(processedM3u8);
                     } else {
                         logDebug(`从缓存返回非 M3U8 内容: ${targetUrl}`);
-                        return createResponse(content, 200, new Headers(headers));
+                        const cachedHeaders = new Headers(headers);
+                        // fetch 已解压，原始长度/编码头不再适用
+                        cachedHeaders.delete('content-encoding');
+                        cachedHeaders.delete('content-length');
+                        return createResponse(content, 200, cachedHeaders);
                     }
                 } else {
                      logDebug(`[缓存未命中] 原始内容: ${targetUrl}`);
@@ -475,10 +533,20 @@ export async function onRequest(context) {
              try {
                  const headersToCache = {};
                  responseHeaders.forEach((value, key) => { headersToCache[key.toLowerCase()] = value; });
-                 const cacheValue = { body: content, headers: JSON.stringify(headersToCache) };
-                 // 注意 KV 写入限制
-                 waitUntil(kvNamespace.put(cacheKey, JSON.stringify(cacheValue), { expirationTtl: CACHE_TTL }));
-                 logDebug(`已将原始内容写入缓存: ${targetUrl}`);
+                 const isBinary = content instanceof ArrayBuffer;
+                 // KV 单值限制 25MB，过大的二进制内容不缓存
+                 if (isBinary && content.byteLength > 10 * 1024 * 1024) {
+                     logDebug(`内容过大，跳过 KV 缓存: ${targetUrl}`);
+                 } else {
+                     const cacheValue = {
+                         body: isBinary ? arrayBufferToBase64(content) : content,
+                         binary: isBinary,
+                         headers: JSON.stringify(headersToCache)
+                     };
+                     // 注意 KV 写入限制
+                     waitUntil(kvNamespace.put(cacheKey, JSON.stringify(cacheValue), { expirationTtl: CACHE_TTL }));
+                     logDebug(`已将原始内容写入缓存: ${targetUrl}`);
+                 }
             } catch (kvError) {
                  logDebug(`向 KV 写入缓存失败 (${cacheKey}): ${kvError.message}`);
                  // 写入失败不影响返回结果
@@ -493,6 +561,9 @@ export async function onRequest(context) {
         } else {
             logDebug(`内容不是 M3U8 (类型: ${contentType})，直接返回: ${targetUrl}`);
             const finalHeaders = new Headers(responseHeaders);
+            // fetch 已解压，原始长度/编码头不再适用（图片等二进制内容尤其重要）
+            finalHeaders.delete('content-encoding');
+            finalHeaders.delete('content-length');
             finalHeaders.set('Cache-Control', `public, max-age=${CACHE_TTL}`);
             // 添加 CORS 头，确保非 M3U8 内容也能跨域访问（例如图片、字幕文件等）
             finalHeaders.set("Access-Control-Allow-Origin", "*");
