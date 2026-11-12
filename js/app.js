@@ -1155,14 +1155,6 @@ async function showDetails(id, vod_name, sourceCode) {
             currentEpisodes = safeEpisodes;
             episodesReversed = false; // 默认正序
             modalContent.innerHTML = `
-                <div class="flex justify-end mb-2">
-                    <button onclick="toggleEpisodeOrder('${sourceCode}')" class="px-4 py-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold rounded-full shadow-lg hover:shadow-xl transition-all duration-300 transform flex items-center justify-center space-x-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 9.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z" clip-rule="evenodd" />
-                        </svg>
-                        <span>倒序排列</span>
-                    </button>
-                </div>
                 <div id="episodesGrid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
                     ${renderEpisodes(vod_name, sourceCode)}
                 </div>
@@ -1349,26 +1341,6 @@ function renderEpisodes(vodName, sourceCode) {
             </button>
         `;
     }).join('');
-}
-
-// 切换排序状态的函数
-function toggleEpisodeOrder(sourceCode) {
-    episodesReversed = !episodesReversed;
-    // 重新渲染剧集区域，使用 currentVideoTitle 作为视频标题
-    const episodesGrid = document.getElementById('episodesGrid');
-    if (episodesGrid) {
-        episodesGrid.innerHTML = renderEpisodes(currentVideoTitle, sourceCode);
-    }
-
-    // 更新按钮文本和箭头方向
-    const toggleBtn = document.querySelector(`button[onclick="toggleEpisodeOrder('${sourceCode}')"]`);
-    if (toggleBtn) {
-        toggleBtn.querySelector('span').textContent = episodesReversed ? '正序排列' : '倒序排列';
-        const arrowIcon = toggleBtn.querySelector('svg');
-        if (arrowIcon) {
-            arrowIcon.style.transform = episodesReversed ? 'rotate(180deg)' : 'rotate(0deg)';
-        }
-    }
 }
 
 // 配置文件导入功能

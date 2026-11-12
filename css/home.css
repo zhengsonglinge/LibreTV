@@ -1787,6 +1787,64 @@ body.page-bg::before {
     }
 }
 
+/* 窄屏弹窗：收紧内边距 / 标题，内容不再被滚动条压住 */
+@media (max-width: 560px) {
+    #modal,
+    #passwordModal,
+    #tagManageModal,
+    #messageBoxModal,
+    #showImportBoxModal {
+        padding: 12px;
+    }
+
+    #modal > div,
+    #passwordModal > div,
+    #tagManageModal > div,
+    #messageBoxModal > div,
+    #showImportBoxModal > div {
+        width: 100% !important;
+        max-width: none !important;
+        max-height: calc(100vh - 24px) !important;
+        max-height: calc(100dvh - 24px) !important;
+        padding: 18px 16px !important;
+        border-radius: 14px !important;
+    }
+
+    #modal > div > div:first-child {
+        align-items: flex-start;
+        margin-bottom: 12px !important;
+    }
+
+    #modalTitle {
+        max-width: calc(100% - 34px) !important;
+        font-size: 1.12rem !important;
+        line-height: 1.35 !important;
+        letter-spacing: -0.02em !important;
+    }
+
+    #modalTitle .text-sm {
+        display: block;
+        margin-top: 3px;
+        font-size: 0.66rem;
+        font-weight: 400;
+        line-height: 1.4;
+    }
+
+    #modalContent {
+        padding-right: 10px;
+        scrollbar-gutter: stable;
+    }
+
+    #modalContent .episode-btn {
+        padding: 9px 6px !important;
+        font-size: 0.72rem !important;
+    }
+
+    #modalContent .grid {
+        gap: 6px !important;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     html {
         scroll-behavior: auto;
