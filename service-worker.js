@@ -1,5 +1,5 @@
 const ASSET_VERSION = '20261112sources1';
-const STATIC_CACHE = 'video-index-static-v9';
+const STATIC_CACHE = 'video-index-static-v10';
 const IMAGE_CACHE = 'video-index-images-v8';
 const IMAGE_CACHE_LIMIT = 120;
 

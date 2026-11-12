@@ -805,10 +805,9 @@ body {
 }
 
 /* 锁定控制时屏蔽交互 */
-.player-container.controls-locked .dplayer-controller,
-.player-container.controls-locked .dplayer-mask,
-.player-container.controls-locked .dplayer-bar-wrap,
-.player-container.controls-locked .dplayer-statusbar,
+.player-container.controls-locked #player .vjs-control-bar,
+.player-container.controls-locked #player .vjs-big-play-button,
+.player-container.controls-locked #player .vjs-loading-spinner,
 .player-container.controls-locked .shortcut-hint {
     opacity: 0 !important;
     pointer-events: none !important;
