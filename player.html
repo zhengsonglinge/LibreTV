@@ -279,6 +279,7 @@
         let shortcutHintTimeout = null; // 用于控制快捷键提示显示时间
         let adFilteringEnabled = true; // 默认开启广告过滤
         let progressSaveInterval = null; // 定期保存进度的计时器
+        let lastRecoveryToastAt = 0; // 播放中错误提示的节流时间戳
         let playerTransitionInProgress = false; // 剧集切换期间忽略旧视频的进度事件
         let playbackRestoreToken = 0;
         let playbackRestoreTimer = null;
@@ -1681,7 +1682,9 @@
 
             player.on('error', function() {
                 if (mediaEl && mediaEl.currentTime > 1) {
-                    console.log('发生错误，但视频已在播放中，忽略');
+                    // 以前这里直接 return，中途出错用户只会看到画面冻住、没有任何提示
+                    console.warn('播放中出现媒体错误，已交由 hls.js 恢复逻辑处理');
+                    showToast('播放出现异常，正在尝试恢复…', 'error');
                     return;
                 }
                 showError('视频播放失败，请检查视频源或网络连接');
@@ -1904,16 +1907,27 @@
                 // 配置HLS.js选项
                 const hlsConfig = {
                     debug: false,
-                    loader: adFilteringEnabled ? CustomHlsJsLoader : Hls.DefaultConfig.loader,
+                    loader: CustomHlsJsLoader,
                     enableWorker: true,
                     lowLatencyMode: false,
-                    backBufferLength: 90,
-                    maxBufferLength: 30,
-                    maxMaxBufferLength: 60,
-                    maxBufferSize: 30 * 1000 * 1000,
-                    maxBufferHole: 0.5,
-                    fragLoadingMaxRetry: 6,
-                    fragLoadingMaxRetryTimeout: 64000,
+                    // 播放器尺寸小的时候不乱拉高码率：同等带宽下能缓冲更多秒数
+                    capLevelToPlayerSize: true,
+                    // 清单解析完就并行拉第一个分片，省一次 RTT
+                    startFragPrefetch: true,
+                    // 历史缓冲只留 30s：长时间观看时 90s 回看缓冲会持续占用内存和解码资源
+                    backBufferLength: 30,
+                    maxBufferLength: 45,
+                    maxMaxBufferLength: 90,
+                    // 高码率 1080p/4K 下 30MB 只够十几秒，缓冲会被字节数提前截断
+                    maxBufferSize: 80 * 1000 * 1000,
+                    // 只容忍 0.2s 以内的缓冲空洞，更大的空洞交给 nudge 跳过而不是卡住等待
+                    maxBufferHole: 0.2,
+                    nudgeOnVideoHole: true,
+                    maxFragLookUpTolerance: 0.5,
+                    fragLoadingMaxRetry: 4,
+                    // 退避是 min(8s, 1s * 2^n)，累计上限约 15s；
+                    // 原来的 64s 会让画面对着一个坏分片干等一分多钟
+                    fragLoadingMaxRetryTimeout: 8000,
                     fragLoadingRetryDelay: 1000,
                     manifestLoadingMaxRetry: 3,
                     manifestLoadingRetryDelay: 1000,
@@ -1922,7 +1936,8 @@
                     startLevel: -1,
                     abrEwmaDefaultEstimate: 500000,
                     abrBandWidthFactor: 0.95,
-                    abrBandWidthUpFactor: 0.7,
+                    // 升档需要约 2 倍带宽余量，避免带宽波动时在相邻码率档来回横跳
+                    abrBandWidthUpFactor: 0.5,
                     abrMaxWithRealBitrate: true,
                     stretchShortVideoTrack: true,
                     appendErrorMaxRetry: 5,  // 增加尝试次数
@@ -1956,13 +1971,33 @@
                 let mediaRecoveryCount = 0;
                 let nativeFallbackAttempted = false;
                 let playbackNoticeCleanupTimer = null;
+                // 已经彻底放弃这次播放（防止后续迟到的事件重复报错/重复销毁）
+                let playbackFailed = false;
 
                 function clearStalePlaybackNotice() {
                     clearPlayerNotice();
                 }
+
+                // 统一的视频事件监听管理：每次换源都会重新绑定，必须能解绑，
+                // 否则连看几十集后回调不断累积，越看越卡
+                const videoListeners = [];
+                function addVideoListener(type, handler) {
+                    video.addEventListener(type, handler);
+                    videoListeners.push([type, handler]);
+                }
+                function removeVideoListeners() {
+                    while (videoListeners.length) {
+                        const entry = videoListeners.pop();
+                        video.removeEventListener(entry[0], entry[1]);
+                    }
+                    if (playbackNoticeCleanupTimer) {
+                        clearTimeout(playbackNoticeCleanupTimer);
+                        playbackNoticeCleanupTimer = null;
+                    }
+                }
                 
                 // 监听视频播放事件
-                video.addEventListener('playing', function() {
+                addVideoListener('playing', function() {
                     playbackStarted = true;
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('error').style.display = 'none';
@@ -1972,7 +2007,7 @@
                 });
                 
                 // 监听视频进度事件
-                video.addEventListener('timeupdate', function() {
+                addVideoListener('timeupdate', function() {
                     if (video.currentTime > 1) {
                         // 视频进度超过1秒，隐藏错误（如果存在）
                         document.getElementById('error').style.display = 'none';
@@ -1988,9 +2023,11 @@
                 const sourceUrl = initialUrl;
                 if (!/^https?:\/\//i.test(sourceUrl)) {
                     showError('播放地址无效，请重新选择片源或剧集');
+                    removeVideoListeners();
                     hls.destroy();
                     currentHls = null;
-                    return;
+                    // 仍要返回 dispose，否则 Video.js 无法回收这个 source handler
+                    return { dispose: function() {} };
                 }
 
                 hls.attachMedia(video);
@@ -2054,43 +2091,60 @@
                     syncPlayerQuality(hls, video);
                 });
 
-                video.addEventListener('loadedmetadata', function() {
+                addVideoListener('loadedmetadata', function() {
                     syncPlayerQuality(hls, video);
                 });
                 
-                hls.on(Hls.Events.ERROR, function(event, data) {
-                    console.log('HLS事件:', event, '数据:', data);
-                    
-                    // 处理bufferAppendError
-                    if (data.details === 'bufferAppendError') {
-                        bufferAppendErrorCount++;
-                        console.warn(`bufferAppendError 发生 ${bufferAppendErrorCount} 次`);
-                        
-                        // 如果视频已经开始播放，则忽略这个错误
-                        if (playbackStarted) {
-                            console.log('视频已在播放中，忽略bufferAppendError');
-                            return;
-                        }
-                        
-                        // 如果出现多次bufferAppendError但视频未播放，尝试恢复
-                        if (bufferAppendErrorCount >= 3) {
-                            hls.recoverMediaError();
-                        }
-                    }
-                    
-                    // 如果是致命错误，且视频未播放
-                    if (data.fatal && !playbackStarted) {
-                        console.error('致命HLS错误:', data);
-                        if (nativeFallbackAttempted) return;
+                // 恢复次数上限：启动阶段宽松一点，播放中更克制，避免死源反复重试
+                function getRecoveryLimits() {
+                    return playbackStarted
+                        ? { network: 3, media: 3 }
+                        : { network: 2, media: 2 };
+                }
 
-                        const responseCode = Number(data.response && data.response.code) || 0;
-                        if (responseCode < 400 && tryNativeHlsFallback()) {
-                            return;
+                // 彻底播不下去了：显示错误并停掉当前 HLS 实例
+                function failPlayback(message) {
+                    if (playbackFailed) return;
+                    playbackFailed = true;
+
+                    showError(message, { force: true });
+                    try {
+                        // 先暂停再销毁：避免残留的 timeupdate 把刚显示的错误蒙层又隐藏掉
+                        video.pause();
+                        hls.destroy();
+                    } catch (error) {
+                        console.warn('销毁失败的HLS实例出错:', error);
+                    }
+                    if (currentHls === hls) {
+                        currentHls = null;
+                    }
+                }
+
+                hls.on(Hls.Events.ERROR, function(event, data) {
+                    // 非致命错误交给 hls.js 内部处理，不再逐条打印全量日志：
+                    // bufferStalledError 每次卡顿都会触发，序列化 data 会拖慢主线程
+                    if (!data.fatal) {
+                        if (data.details === 'bufferAppendError') {
+                            bufferAppendErrorCount++;
+                            console.warn(`bufferAppendError 发生 ${bufferAppendErrorCount} 次`);
+                            // 播放中忽略；启动阶段连续失败时尝试恢复解码器
+                            if (!playbackStarted && bufferAppendErrorCount >= 3) {
+                                hls.recoverMediaError();
+                            }
                         }
+                        return;
+                    }
+
+                    console.error('致命HLS错误:', data.type, data.details, data);
+
+                    if (playbackFailed) return;
+
+                    const responseCode = Number(data.response && data.response.code) || 0;
+
+                    // ===== 启动阶段：源本身不可用就直接提示，不必反复重试 =====
+                    if (!playbackStarted) {
                         if (responseCode >= 400) {
-                            showError(`片源不可用（HTTP ${responseCode}），请切换其他来源`);
-                            hls.destroy();
-                            currentHls = null;
+                            failPlayback(`片源不可用（HTTP ${responseCode}），请切换其他来源`);
                             return;
                         }
 
@@ -2103,42 +2157,58 @@
 
                         // 清单无法加载时不再无限重试，直接提示切换片源
                         if (manifestFailed) {
-                            showError('片源连接失败或格式无效，请切换其他来源');
-                            hls.destroy();
-                            currentHls = null;
+                            failPlayback('片源连接失败或格式无效，请切换其他来源');
                             return;
                         }
 
-                        switch(data.type) {
-                            case Hls.ErrorTypes.NETWORK_ERROR:
-                                if (networkRecoveryCount >= 2) {
-                                    showError('片源网络连接失败，请检查网络或切换其他来源');
-                                    hls.destroy();
-                                    currentHls = null;
-                                    return;
-                                }
-                                networkRecoveryCount++;
-                                console.log(`尝试恢复网络错误（${networkRecoveryCount}/2）`);
-                                hls.startLoad();
-                                break;
-                            case Hls.ErrorTypes.MEDIA_ERROR:
-                                if (mediaRecoveryCount >= 2) {
-                                    showError('视频解码失败，请切换其他来源');
-                                    hls.destroy();
-                                    currentHls = null;
-                                    return;
-                                }
-                                mediaRecoveryCount++;
-                                console.log(`尝试恢复媒体错误（${mediaRecoveryCount}/2）`);
-                                hls.recoverMediaError();
-                                break;
-                            default:
-                                if (!errorDisplayed) {
-                                    errorDisplayed = true;
-                                    showError('视频加载失败，可能是格式不兼容或源不可用');
-                                }
-                                break;
+                        // 部分设备支持原生 HLS，先试一次原生播放兜底
+                        if (!nativeFallbackAttempted && tryNativeHlsFallback()) {
+                            return;
                         }
+                    }
+
+                    // ===== 启动阶段和播放中都适用的有限次恢复 =====
+                    // 原来的判断是 data.fatal && !playbackStarted，
+                    // 结果播到一半断网/分片失效/解码失败时一个分支都不进，
+                    // 画面永久冻住且没有任何提示。这里去掉了 playbackStarted 限制。
+                    const limits = getRecoveryLimits();
+
+                    switch (data.type) {
+                        case Hls.ErrorTypes.NETWORK_ERROR:
+                            if (networkRecoveryCount >= limits.network) {
+                                failPlayback(playbackStarted
+                                    ? '播放中断：片源网络连接失败，请切换其他来源'
+                                    : '片源网络连接失败，请检查网络或切换其他来源');
+                                return;
+                            }
+                            networkRecoveryCount++;
+                            console.warn(`尝试恢复网络错误（${networkRecoveryCount}/${limits.network}）`);
+                            // 播放中从当前位置重新拉流，避免继续消费已经失效的分片队列
+                            if (playbackStarted && Number.isFinite(video.currentTime)) {
+                                hls.startLoad(video.currentTime);
+                            } else {
+                                hls.startLoad();
+                            }
+                            break;
+                        case Hls.ErrorTypes.MEDIA_ERROR:
+                            if (mediaRecoveryCount >= limits.media) {
+                                failPlayback(playbackStarted
+                                    ? '播放中断：视频解码失败，请切换其他来源'
+                                    : '视频解码失败，请切换其他来源');
+                                return;
+                            }
+                            mediaRecoveryCount++;
+                            console.warn(`尝试恢复媒体错误（${mediaRecoveryCount}/${limits.media}）`);
+                            hls.recoverMediaError();
+                            break;
+                        default:
+                            if (!errorDisplayed) {
+                                errorDisplayed = true;
+                                showError('视频加载失败，可能是格式不兼容或源不可用', {
+                                    force: !playbackStarted
+                                });
+                            }
+                            break;
                     }
                 });
                 
@@ -2154,6 +2224,7 @@
 
                 return {
                     dispose: function() {
+                        removeVideoListeners();
                         if (currentHls === hls) {
                             currentHls = null;
                         }
@@ -2174,45 +2245,560 @@
         }
 
 
-        // 自定义M3U8 Loader用于过滤广告
+        // ===== 分片缓存（IndexedDB + LRU）=====
+        // 目的：把播放过的分片落盘，重看 / 回拖 / 网络抖动时直接命中，零额外带宽。
+        // 只缓存 hls.js 请求过的内容，不主动下载，避免抢播放带宽和放大源站带宽成本。
+        //
+        // 重要：数据(ArrayBuffer)和元信息(size/lastAccess)必须分库存放。
+        // 如果同库，重建 LRU 索引时 cursor.value 会把每条记录的 ArrayBuffer 一起反序列化，
+        // 相当于每次打开播放页都要把整个缓存读进内存，起播直接卡死。
+        const SEGMENT_CACHE_DB = 'libreTVSegmentCache';
+        const SEGMENT_CACHE_VERSION = 2;
+        const SEGMENT_CACHE_DATA_STORE = 'segments';   // key -> { key, data }
+        const SEGMENT_CACHE_META_STORE = 'meta';       // key -> { key, size, lastAccess }
+        const SEGMENT_CACHE_HARD_LIMIT = 1024 * 1024 * 1024; // 硬上限 1GB
+        const SEGMENT_CACHE_FLOOR_LIMIT = 64 * 1024 * 1024;  // 下限 64MB
+        const SEGMENT_CACHE_EVICT_TARGET = 0.8;              // 超限后回收到 80%
+        const SEGMENT_CACHE_MAX_PENDING = 12;                // 写入队列上限，防止内存堆积
+        const SEGMENT_CACHE_META_TOUCH_INTERVAL = 5000;      // 元信息回写最小间隔
+
+        const segmentCache = (function () {
+            let disabled = false;
+            let dbPromise = null;
+            let indexReady = Promise.resolve();
+            let ready = false;   // 索引就绪前，读缓存不参与起播关键路径
+            let limitsPromise = null;
+            let limitBytes = SEGMENT_CACHE_HARD_LIMIT;
+            let totalBytes = 0;
+            let pendingWrites = 0;
+            let writeQueue = Promise.resolve();
+            let persistRequested = false;
+            let lastMetaTouch = 0;
+            const lru = new Map(); // key -> size，Map 的插入顺序即 LRU 顺序（前面最旧）
+
+            function isEnabled() {
+                if (disabled) return false;
+                if (typeof indexedDB === 'undefined') return false;
+                try {
+                    // 留一个后门方便排查：localStorage.segmentCacheEnabled = 'false'
+                    if (localStorage.getItem('segmentCacheEnabled') === 'false') return false;
+                } catch (error) {
+                    // 忽略隐私模式下的访问异常
+                }
+                return true;
+            }
+
+            // 第一次真正写缓存时才申请持久化，避免"打开播放页就弹授权"
+            function requestPersist() {
+                if (persistRequested) return;
+                persistRequested = true;
+                try {
+                    if (navigator.storage && typeof navigator.storage.persist === 'function') {
+                        navigator.storage.persist().catch(function () {});
+                    }
+                } catch (error) {
+                    // 忽略
+                }
+            }
+
+            // 按实际配额算缓存上限（配额的 30%，夹在 64MB ~ 1GB 之间）
+            function resolveLimits() {
+                if (limitsPromise) return limitsPromise;
+                limitsPromise = new Promise(function (resolve) {
+                    try {
+                        if (navigator.storage && typeof navigator.storage.estimate === 'function') {
+                            navigator.storage.estimate().then(function (estimate) {
+                                const quota = Number(estimate && estimate.quota) || 0;
+                                if (quota > 0) {
+                                    limitBytes = Math.min(
+                                        SEGMENT_CACHE_HARD_LIMIT,
+                                        Math.max(SEGMENT_CACHE_FLOOR_LIMIT, Math.floor(quota * 0.3))
+                                    );
+                                }
+                            }).catch(function () {}).then(resolve, resolve);
+                        } else {
+                            resolve();
+                        }
+                    } catch (error) {
+                        resolve();
+                    }
+                });
+                return limitsPromise;
+            }
+
+            function open() {
+                if (dbPromise) return dbPromise;
+
+                dbPromise = new Promise(function (resolve) {
+                    if (!isEnabled()) {
+                        resolve(null);
+                        return;
+                    }
+                    let request;
+                    try {
+                        request = indexedDB.open(SEGMENT_CACHE_DB, SEGMENT_CACHE_VERSION);
+                    } catch (error) {
+                        console.warn('分片缓存不可用，已关闭:', error);
+                        disabled = true;
+                        resolve(null);
+                        return;
+                    }
+
+                    request.onupgradeneeded = function () {
+                        const db = request.result;
+                        // v1 把数据和元信息放在同一个库，重建索引会读出整个缓存，直接丢弃重建
+                        if (db.objectStoreNames.contains(SEGMENT_CACHE_DATA_STORE)) {
+                            db.deleteObjectStore(SEGMENT_CACHE_DATA_STORE);
+                        }
+                        if (db.objectStoreNames.contains(SEGMENT_CACHE_META_STORE)) {
+                            db.deleteObjectStore(SEGMENT_CACHE_META_STORE);
+                        }
+                        db.createObjectStore(SEGMENT_CACHE_DATA_STORE, { keyPath: 'key' });
+                        db.createObjectStore(SEGMENT_CACHE_META_STORE, { keyPath: 'key' })
+                            .createIndex('lastAccess', 'lastAccess');
+                    };
+                    request.onsuccess = function () {
+                        const db = request.result;
+                        db.onversionchange = function () {
+                            try { db.close(); } catch (error) {}
+                        };
+                        resolve(db);
+                        indexReady = buildIndex(db).then(
+                            function () { ready = true; },
+                            function () { ready = true; }
+                        );
+                    };
+                    request.onerror = function () {
+                        console.warn('分片缓存打开失败，已关闭');
+                        disabled = true;
+                        resolve(null);
+                    };
+                    request.onblocked = function () {
+                        disabled = true;
+                        resolve(null);
+                    };
+                });
+
+                resolveLimits();
+                return dbPromise;
+            }
+
+            // 从元信息库恢复 LRU 顺序和占用量（只读小记录，不碰分片数据）
+            function buildIndex(db) {
+                return new Promise(function (resolve) {
+                    if (!db) {
+                        resolve();
+                        return;
+                    }
+                    try {
+                        const tx = db.transaction(SEGMENT_CACHE_META_STORE, 'readonly');
+                        const request = tx.objectStore(SEGMENT_CACHE_META_STORE).index('lastAccess').openCursor();
+                        request.onsuccess = function () {
+                            const cursor = request.result;
+                            if (!cursor) return;
+                            const record = cursor.value;
+                            if (record && record.key) {
+                                const size = Number(record.size) || 0;
+                                lru.set(record.key, size);
+                                totalBytes += size;
+                            }
+                            cursor.continue();
+                        };
+                        tx.oncomplete = function () {
+                            evictIfNeeded(0).catch(function () {}).then(resolve, resolve);
+                        };
+                        tx.onerror = function () { resolve(); };
+                        tx.onabort = function () { resolve(); };
+                    } catch (error) {
+                        resolve();
+                    }
+                });
+            }
+
+            // 打开数据库并等配额和索引都就绪
+            function ensureReady() {
+                return resolveLimits().then(open).then(function (db) {
+                    if (!db) return null;
+                    return indexReady.then(function () { return db; });
+                });
+            }
+
+            function touch(key) {
+                if (!lru.has(key)) return;
+                const size = lru.get(key);
+                lru.delete(key);
+                lru.set(key, size);
+
+                const now = Date.now();
+                if (now - lastMetaTouch < SEGMENT_CACHE_META_TOUCH_INTERVAL) return;
+                lastMetaTouch = now;
+                // 低频把访问时间刷回元信息，保证刷新后 LRU 顺序仍接近真实
+                open().then(function (db) {
+                    if (!db) return;
+                    try {
+                        db.transaction(SEGMENT_CACHE_META_STORE, 'readwrite')
+                            .objectStore(SEGMENT_CACHE_META_STORE)
+                            .put({ key: key, size: size, lastAccess: now });
+                    } catch (error) {
+                        // 忽略
+                    }
+                }).catch(function () {});
+            }
+
+            function evictIfNeeded(incomingBytes) {
+                if (totalBytes + incomingBytes <= limitBytes) return Promise.resolve();
+
+                const target = limitBytes * SEGMENT_CACHE_EVICT_TARGET;
+                const victims = [];
+                for (const entry of lru) {
+                    if (totalBytes + incomingBytes <= target) break;
+                    victims.push(entry[0]);
+                    totalBytes -= entry[1] || 0;
+                    lru.delete(entry[0]);
+                }
+                if (victims.length === 0) return Promise.resolve();
+
+                return ensureReady().then(function (db) {
+                    if (!db) return;
+                    return new Promise(function (resolve) {
+                        try {
+                            const tx = db.transaction(
+                                [SEGMENT_CACHE_DATA_STORE, SEGMENT_CACHE_META_STORE],
+                                'readwrite'
+                            );
+                            const dataStore = tx.objectStore(SEGMENT_CACHE_DATA_STORE);
+                            const metaStore = tx.objectStore(SEGMENT_CACHE_META_STORE);
+                            victims.forEach(function (key) {
+                                dataStore.delete(key);
+                                metaStore.delete(key);
+                            });
+                            tx.oncomplete = resolve;
+                            tx.onerror = resolve;
+                            tx.onabort = resolve;
+                        } catch (error) {
+                            resolve();
+                        }
+                    });
+                });
+            }
+
+            function get(key) {
+                if (!isEnabled()) return Promise.resolve(null);
+                return ensureReady().then(function (db) {
+                    if (!db) return null;
+                    return new Promise(function (resolve) {
+                        let request;
+                        try {
+                            request = db.transaction(SEGMENT_CACHE_DATA_STORE, 'readonly')
+                                .objectStore(SEGMENT_CACHE_DATA_STORE)
+                                .get(key);
+                        } catch (error) {
+                            resolve(null);
+                            return;
+                        }
+                        request.onsuccess = function () {
+                            const record = request.result;
+                            if (!record || !record.data) {
+                                resolve(null);
+                                return;
+                            }
+                            touch(key);
+                            resolve(record.data);
+                        };
+                        request.onerror = function () { resolve(null); };
+                    });
+                }).catch(function () { return null; });
+            }
+
+            function put(key, data, url) {
+                if (!isEnabled()) return Promise.resolve();
+                const size = Number(data && data.byteLength) || 0;
+                if (size === 0) return Promise.resolve();
+                // 单个分片超过配额的 1/8 就没必要缓存了
+                if (size > limitBytes / 8) return Promise.resolve();
+                if (pendingWrites >= SEGMENT_CACHE_MAX_PENDING) return Promise.resolve();
+
+                requestPersist();
+                pendingWrites += 1;
+                writeQueue = ensureReady()
+                    .then(function () { return evictIfNeeded(size); })
+                    .then(function () { return open(); })
+                    .then(function (db) {
+                        if (!db) return;
+                        return new Promise(function (resolve) {
+                            let tx;
+                            try {
+                                tx = db.transaction(
+                                    [SEGMENT_CACHE_DATA_STORE, SEGMENT_CACHE_META_STORE],
+                                    'readwrite'
+                                );
+                                const lastAccess = Date.now();
+                                tx.objectStore(SEGMENT_CACHE_DATA_STORE).put({ key: key, data: data });
+                                tx.objectStore(SEGMENT_CACHE_META_STORE).put({
+                                    key: key,
+                                    size: size,
+                                    lastAccess: lastAccess
+                                });
+                            } catch (error) {
+                                resolve();
+                                return;
+                            }
+                            tx.oncomplete = function () {
+                                const previous = lru.get(key) || 0;
+                                lru.delete(key);
+                                lru.set(key, size);
+                                totalBytes += size - previous;
+                                resolve();
+                            };
+                            tx.onerror = function () { resolve(); };
+                            tx.onabort = function () { resolve(); };
+                        });
+                    })
+                    .catch(function (error) {
+                        // 配额真的写不进去就整体关掉，避免每帧重试
+                        if (error && /quota/i.test(String(error.name || error.message || ''))) {
+                            console.warn('分片缓存配额不足，已关闭:', error);
+                            disabled = true;
+                        }
+                    })
+                    .then(function () {
+                        pendingWrites -= 1;
+                    });
+
+                return writeQueue;
+            }
+
+            // 缓存 key：同一 URL 的不同 Range 必须区分开，
+            // 否则 BYTERANGE 源（fMP4）会把不同片段互相覆盖
+            function buildKey(context) {
+                if (!context || !context.url) return '';
+                const start = Number(context.rangeStart) || 0;
+                const end = Number(context.rangeEnd) || 0;
+                return end > 0 ? context.url + '|' + start + '-' + end : context.url + '|0';
+            }
+
+            // 伪造一份"看起来像正常下载"的计时统计。
+            // 关键点：如果直接给 tload=0，ABR 会算出无穷大带宽并立刻跳到最高档，
+            // 反而导致后续都要重新走网络而卡顿。这里按当前档位码率的 1.05 倍估算，
+            // 低于 ABR 升档阈值（约 2 倍）、高于降档阈值，让档位保持稳定。
+            function buildStats(data, levelBitrate) {
+                const now = (typeof performance !== 'undefined' && performance.now)
+                    ? performance.now()
+                    : Date.now();
+                const loaded = Number(data.byteLength) || 0;
+                const bitrate = Number(levelBitrate) || 0;
+                const bps = bitrate > 0 ? bitrate * 1.05 : 6 * 1000 * 1000;
+                const loadMs = Math.min(8000, Math.max(40, (loaded * 8000) / bps));
+                const ttfbMs = Math.min(120, Math.max(20, loadMs * 0.2));
+
+                return {
+                    aborted: false,
+                    loaded: loaded,
+                    retry: 0,
+                    total: loaded,
+                    chunkCount: 0,
+                    bwEstimate: bps,
+                    loading: {
+                        start: now - loadMs - ttfbMs,
+                        first: now - loadMs,
+                        end: now - ttfbMs
+                    },
+                    parsing: { start: now - ttfbMs, end: now },
+                    buffering: { start: 0, first: 0, end: 0 }
+                };
+            }
+
+            function getLevelBitrate(context) {
+                try {
+                    const level = context && context.frag ? context.frag.level : -1;
+                    const hls = currentHls;
+                    if (hls && Array.isArray(hls.levels) && Number.isInteger(level) && hls.levels[level]) {
+                        return Number(hls.levels[level].bitrate) || 0;
+                    }
+                } catch (error) {
+                    // 忽略
+                }
+                return 0;
+            }
+
+            // 命中就回放缓存，没命中就走网络并顺手写缓存
+            function serve(context, config, callbacks, networkLoad) {
+                const key = buildKey(context);
+                if (!key || !isEnabled()) {
+                    networkLoad();
+                    return;
+                }
+
+                const loadFromNetwork = function () {
+                    const onSuccess = callbacks.onSuccess;
+                    callbacks.onSuccess = function (response, stats, ctx, networkDetails) {
+                        if (response && response.data && Number(response.data.byteLength) > 0) {
+                            put(key, response.data, context.url);
+                        }
+                        return onSuccess(response, stats, ctx, networkDetails);
+                    };
+                    networkLoad();
+                };
+
+                // 索引还没建好（刚打开播放页）时不要在起播关键路径上等 IndexedDB，
+                // 直接走网络；这次的分片照样会被存下来
+                if (!ready) {
+                    loadFromNetwork();
+                    return;
+                }
+
+                get(key).then(function (data) {
+                    if (!data || !Number(data.byteLength)) {
+                        loadFromNetwork();
+                        return;
+                    }
+                    try {
+                        callbacks.onSuccess(
+                            { url: context.url, data: data, code: 200 },
+                            buildStats(data, getLevelBitrate(context)),
+                            context
+                        );
+                    } catch (error) {
+                        console.warn('读取分片缓存失败，回退到网络:', error);
+                        loadFromNetwork();
+                    }
+                }).catch(function () {
+                    loadFromNetwork();
+                });
+            }
+
+            function stats() {
+                return {
+                    enabled: isEnabled(),
+                    ready: ready,
+                    entries: lru.size,
+                    totalBytes: totalBytes,
+                    limitBytes: limitBytes
+                };
+            }
+
+            function statsAsync() {
+                return ensureReady().then(stats, stats);
+            }
+
+            function warmup() {
+                return ensureReady().catch(function () {});
+            }
+
+            return {
+                warmup: warmup,
+                serve: serve,
+                stats: stats,
+                statsAsync: statsAsync,
+                get: get,
+                put: put
+            };
+        })();
+
+        // 便于在控制台排查：await getSegmentCacheStats()
+        window.getSegmentCacheStats = function () { return segmentCache.statsAsync(); };
+
+        // 页面加载时后台打开数据库并重建索引，等用户点播放时已经就绪
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function () { segmentCache.warmup(); });
+        } else {
+            segmentCache.warmup();
+        }
+
+        // 自定义 Loader：清单做广告过滤，分片走 IndexedDB 缓存
         class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             constructor(config) {
                 super(config);
                 const load = this.load.bind(this);
                 this.load = function(context, config, callbacks) {
-                    // 拦截manifest和level请求
-                    if (context.type === 'manifest' || context.type === 'level') {
+                    // 1) 清单请求：按开关做广告过滤（不再依赖 loader 是否被启用）
+                    if (adFilteringEnabled && context
+                        && (context.type === 'manifest' || context.type === 'level')) {
                         const onSuccess = callbacks.onSuccess;
-                        callbacks.onSuccess = function(response, stats, context) {
-                            // 如果是m3u8文件，处理内容以移除广告分段
-                            if (response.data && typeof response.data === 'string') {
-                                // 过滤掉广告段 - 实现更精确的广告过滤逻辑
+                        callbacks.onSuccess = function(response, stats, ctx, networkDetails) {
+                            if (response && response.data && typeof response.data === 'string') {
                                 response.data = filterAdsFromM3U8(response.data, true);
                             }
-                            return onSuccess(response, stats, context);
+                            return onSuccess(response, stats, ctx, networkDetails);
                         };
                     }
+
+                    // 2) 分片 / 初始化段 / 解密密钥（都是 arraybuffer）：先查缓存
+                    if (context && context.frag && context.responseType === 'arraybuffer') {
+                        segmentCache.serve(context, config, callbacks, function() {
+                            load(context, config, callbacks);
+                        });
+                        return;
+                    }
+
                     // 执行原始load方法
                     load(context, config, callbacks);
                 };
             }
         }
 
-        // M3U8清单广告过滤函数
-        function filterAdsFromM3U8(m3u8Content, strictMode = false) {
-            if (!m3u8Content) return '';
+        // ===== M3U8 清单广告过滤 =====
+        // 原则：只丢弃明确的广告分片，绝不删除任何 #EXT 标签
+        // 判断某个分片地址是否明显是广告：只看路径最后两段的名字，
+        // 且必须是完整的 ad / ads / adv / advert 这类词，避免误伤 1000k、seg-1 这类正常分片
+        function isAdSegmentUrl(rawUrl) {
+            if (!rawUrl) return false;
+            try {
+                const parsed = new URL(rawUrl, 'https://placeholder.invalid/');
+                const segments = parsed.pathname.split('/').filter(Boolean).slice(-2);
+                return segments.some(function(segment) {
+                    const base = segment.replace(/\.(?:ts|m4s|mp4|m4v|aac|m4a|cmfv|cmfa)$/i, '');
+                    return /^(?:ad|ads|adv|advert|adverts|adserver|adservice|guanggao|preroll|midroll|postroll)$/i.test(base)
+                        || /^(?:ad|ads|adv|advert)[-_]?(?:pre|mid|post)?roll\d*$/i.test(base);
+                });
+            } catch (error) {
+                return false;
+            }
+        }
 
-            // 按行分割M3U8内容
+        function filterAdsFromM3U8(m3u8Content, strictMode = false) {
+            if (!m3u8Content || typeof m3u8Content !== 'string') return m3u8Content || '';
+
             const lines = m3u8Content.split('\n');
             const filteredLines = [];
+            let droppedSegments = 0;
+            let keptSegments = 0;
 
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
+                const trimmed = line.trim();
 
-                // 只过滤#EXT-X-DISCONTINUITY标识
-                if (!line.includes('#EXT-X-DISCONTINUITY')) {
+                // 标签行一律保留：删掉 #EXT-X-DISCONTINUITY（或 -SEQUENCE）会让
+                // 时间戳跳变失去重同步点，导致缓冲空洞、卡顿和音画不同步。
+                if (!trimmed || trimmed.startsWith('#')) {
                     filteredLines.push(line);
+                    continue;
                 }
+
+                // 只有分片地址明确命中广告特征时才丢弃该分片
+                if (isAdSegmentUrl(trimmed)) {
+                    // 连带丢弃它前面紧邻的分片描述行（EXTINF / BYTERANGE），
+                    // 但绝不碰 EXT-X-KEY / EXT-X-MAP 等影响解码的标签
+                    while (filteredLines.length) {
+                        const previous = filteredLines[filteredLines.length - 1].trim();
+                        if (previous.startsWith('#EXTINF') || previous.startsWith('#EXT-X-BYTERANGE')) {
+                            filteredLines.pop();
+                            continue;
+                        }
+                        break;
+                    }
+                    droppedSegments++;
+                    continue;
+                }
+
+                keptSegments++;
+                filteredLines.push(line);
+            }
+
+            // 安全阀：如果筛完一个分片都不剩，说明判断失误，原样返回避免播出空白
+            if (keptSegments === 0 && droppedSegments > 0) {
+                console.warn('广告过滤后没有剩余分片，已回退为原始播放列表');
+                return m3u8Content;
             }
 
             return filteredLines.join('\n');
@@ -2220,13 +2806,22 @@
         
 
         // 显示错误
-        function showError(message) {
-            // 在视频已经播放的情况下不显示错误
-            if (mediaEl && mediaEl.currentTime > 1) {
-                console.log('忽略错误:', message);
+        // options.force = true 时即使已经在播放也显示错误蒙层（用于确实播不下去的情况）
+        function showError(message, options = {}) {
+            const isPlaying = Boolean(mediaEl && mediaEl.currentTime > 1);
+
+            if (isPlaying && !options.force) {
+                // 播放中途的偶发错误：不用整块蒙层打断观看，给个轻提示；
+                // 但以前这里是完全静默的，用户只看到画面卡住却什么也不知道
+                console.warn('播放中的错误（轻提示）:', message);
+                const now = Date.now();
+                if (now - lastRecoveryToastAt > 5000) {
+                    lastRecoveryToastAt = now;
+                    showToast(message, 'error');
+                }
                 return;
             }
-            
+
             document.getElementById('loading').style.display = 'none';
             document.getElementById('error').style.display = 'flex';
             document.getElementById('error-message').textContent = message;
