@@ -533,6 +533,25 @@ body.playback-history-open {
     height: 100%;
 }
 
+/* 原生播放（iPad / iPhone）：不加载 Video.js，用系统控件 */
+#player.libretv-native-video {
+    display: block;
+    object-fit: contain;
+    background-color: #0c0c0b;
+    border-radius: inherit;
+}
+
+/* 原生播放时蒙层不能挡住系统播放按钮（iOS 上可能要等用户点一下才开始加载） */
+#playerContainer[data-playback-engine="native-hls"] .loading-container,
+#playerContainer[data-playback-engine="native"] .loading-container {
+    pointer-events: none;
+}
+
+/* 原生控件的面板会贴底，跟着容器的圆角收一下 */
+#player.libretv-native-video::-webkit-media-controls-panel {
+    border-radius: 0 0 18px 18px;
+}
+
 /* Video.js 外观对齐站点风格 */
 #player.video-js {
     width: 100%;

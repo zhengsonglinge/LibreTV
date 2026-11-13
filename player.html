@@ -12,8 +12,7 @@
 
     <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
     <link rel="stylesheet" href="css/styles.css?v=20261113sourcenetwork2">
-    <link rel="stylesheet" href="libs/video-js.min.css?v=20251113videojs1">
-    <link rel="stylesheet" href="css/player.css?v=20251113videojs1">
+    <link rel="stylesheet" href="css/player.css?v=20251114native1">
 </head>
 <body class="player-page">
     <header class="player-header">
@@ -218,8 +217,7 @@
         window._jsSha256 = window.sha256;
     </script>
     
-    <script src="libs/hls.min.js?v=20261112sources1" crossorigin="anonymous"></script>
-    <script src="libs/video.min.js?v=20251113videojs1" crossorigin="anonymous"></script>
+    <!-- hls.js 与 Video.js 改为按需加载：iPad/iPhone 走系统原生 HLS，两者都不下载 -->
 
     <script src="js/config.js?v=20261113bfzydirect1"></script>
     <script src="js/password.js?v=20261112sources1"></script>
@@ -288,6 +286,70 @@
         let playbackHistoryOpen = false;
         const sharePlaybackUrlCache = new Map();
         const DIRECT_MEDIA_PATH_PATTERN = /\.(?:m3u8|mp4|m4v|webm|ogv|ogg|mov|flv|mkv|ts)$/i;
+
+        // ===== 播放器依赖按需加载 =====
+        // Video.js ≈ 676KB JS + 47KB CSS，hls.js ≈ 512KB。
+        // iPad / iPhone 用系统原生 HLS，这两个库一行都不该下载。
+        const PLAYER_LIB_URLS = {
+            videoJsCss: 'libs/video-js.min.css?v=20251113videojs1',
+            videoJs: 'libs/video.min.js?v=20251113videojs1',
+            hlsJs: 'libs/hls.min.js?v=20261112sources1'
+        };
+
+        const pendingLibLoads = new Map();
+
+        function loadResourceOnce(url, factory) {
+            if (pendingLibLoads.has(url)) return pendingLibLoads.get(url);
+            const promise = new Promise(function (resolve, reject) {
+                const node = factory();
+                node.onload = function () { resolve(); };
+                node.onerror = function () {
+                    pendingLibLoads.delete(url);
+                    reject(new Error('资源加载失败: ' + url));
+                };
+                (node.__mount || function (el) { document.head.appendChild(el); })(node);
+            });
+            pendingLibLoads.set(url, promise);
+            return promise;
+        }
+
+        function ensureHlsLib() {
+            if (typeof Hls !== 'undefined') return Promise.resolve();
+            return loadResourceOnce(PLAYER_LIB_URLS.hlsJs, function () {
+                const script = document.createElement('script');
+                script.src = PLAYER_LIB_URLS.hlsJs;
+                script.async = true;
+                script.crossOrigin = 'anonymous';
+                return script;
+            });
+        }
+
+        function ensureVideoJsLib() {
+            if (typeof videojs === 'function') return Promise.resolve();
+            const stylePromise = loadResourceOnce(PLAYER_LIB_URLS.videoJsCss, function () {
+                const link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = PLAYER_LIB_URLS.videoJsCss;
+                // 必须插到 player.css 之前，否则 Video.js 的基础样式会盖掉我们的定制
+                link.__mount = function (el) {
+                    const anchor = document.querySelector('link[href*="player.css"]');
+                    if (anchor && anchor.parentNode) {
+                        anchor.parentNode.insertBefore(el, anchor);
+                    } else {
+                        document.head.appendChild(el);
+                    }
+                };
+                return link;
+            });
+            const scriptPromise = loadResourceOnce(PLAYER_LIB_URLS.videoJs, function () {
+                const script = document.createElement('script');
+                script.src = PLAYER_LIB_URLS.videoJs;
+                script.async = true;
+                script.crossOrigin = 'anonymous';
+                return script;
+            });
+            return Promise.all([stylePromise, scriptPromise]);
+        }
 
         // 页面加载
         document.addEventListener('DOMContentLoaded', function() {
@@ -1408,12 +1470,27 @@
         }
 
         function isHlsJsSupported() {
+            if (typeof Hls !== 'undefined') {
+                try {
+                    return Hls.isSupported();
+                } catch (error) {
+                    console.warn('检测 Hls.js 支持失败:', error);
+                    return false;
+                }
+            }
+            // hls.js 还没按需加载，用 MSE 能力做等价判断（hls.js 本身就跑在 MSE 上）
             try {
-                return typeof Hls !== 'undefined' && Hls.isSupported();
+                return typeof MediaSource !== 'undefined' || typeof ManagedMediaSource !== 'undefined';
             } catch (error) {
-                console.warn('检测 Hls.js 支持失败:', error);
                 return false;
             }
+        }
+
+        // iPad / iPhone / iPod：不加载 Video.js，直接用系统原生播放器。
+        // Video.js 那套自定义控制条在 iOS 上会和系统全屏、画中画、双击快进等
+        // 原生手势打架，还要白白下载 700KB+，收益为零。
+        function shouldUseNativePlayerShell() {
+            return isAppleMobileDevice();
         }
 
         function detectVideoPlaybackKind(url) {
@@ -1476,7 +1553,7 @@
         }
 
         // 初始化播放器（Video.js）
-        function initPlayer(videoUrl, sourceCode) {
+        async function initPlayer(videoUrl, sourceCode) {
             resetPlayerQuality();
 
             if (!/^https?:\/\//i.test(videoUrl || '')) {
@@ -1491,7 +1568,23 @@
             }
 
             if (!player) {
-                if (!createVideoPlayer()) return;
+                let created = false;
+                try {
+                    if (shouldUseNativePlayerShell()) {
+                        created = createNativePlayer();
+                    } else {
+                        // 只有真正需要 hls.js 时才去下载它（约 512KB）
+                        if (playbackPlan.engine === 'hls.js') {
+                            await ensureHlsLib();
+                        }
+                        created = await createVideoJsPlayer();
+                    }
+                } catch (error) {
+                    console.error('播放器初始化失败:', error);
+                    showError('播放器初始化失败，请检查网络后刷新页面重试');
+                    return;
+                }
+                if (!created) return;
                 bindPlayerEvents();
                 setupLongPressSpeedControl();
             }
@@ -1499,8 +1592,152 @@
             loadPlayerSource(videoUrl, playbackPlan);
         }
 
-        // 创建 Video.js 实例
-        function createVideoPlayer() {
+        // ===== 原生播放器外壳（iPad / iPhone）=====
+        // 用真实 <video> + 系统控件，并提供 Video.js 的最小 API 子集，
+        // 让页面其余所有 player.xxx() 调用无需改动。
+        const NATIVE_MEDIA_EVENTS = [
+            'loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough',
+            'play', 'playing', 'pause', 'progress', 'timeupdate', 'seeking', 'seeked',
+            'ended', 'error', 'waiting', 'stalled', 'durationchange', 'volumechange',
+            'ratechange', 'emptied', 'abort'
+        ];
+
+        function createNativePlayerShim(video, shell) {
+            const listeners = new Map();
+
+            function on(event, fn) {
+                if (typeof fn !== 'function') return;
+                const bucket = listeners.get(event) || [];
+                bucket.push(fn);
+                listeners.set(event, bucket);
+
+                if (NATIVE_MEDIA_EVENTS.indexOf(event) !== -1) {
+                    video.addEventListener(event, fn);
+                } else if (event === 'fullscreenchange') {
+                    // iOS 的原生全屏不发标准 fullscreenchange，要额外监听 webkit 事件
+                    document.addEventListener('fullscreenchange', fn);
+                    document.addEventListener('webkitfullscreenchange', fn);
+                    video.addEventListener('webkitbeginfullscreen', fn);
+                    video.addEventListener('webkitendfullscreen', fn);
+                }
+                // 其余事件（useractive 等）在原生模式下没有对应语义，直接忽略
+            }
+
+            function off(event, fn) {
+                const bucket = listeners.get(event) || [];
+                const index = bucket.indexOf(fn);
+                if (index !== -1) bucket.splice(index, 1);
+
+                if (NATIVE_MEDIA_EVENTS.indexOf(event) !== -1) {
+                    video.removeEventListener(event, fn);
+                } else if (event === 'fullscreenchange') {
+                    document.removeEventListener('fullscreenchange', fn);
+                    document.removeEventListener('webkitfullscreenchange', fn);
+                    video.removeEventListener('webkitbeginfullscreen', fn);
+                    video.removeEventListener('webkitendfullscreen', fn);
+                }
+            }
+
+            function isNativeFullscreen() {
+                return Boolean(
+                    video.webkitDisplayingFullscreen
+                    || document.fullscreenElement === shell
+                    || document.fullscreenElement === video
+                );
+            }
+
+            return {
+                addClass: function (name) { if (shell && name) shell.classList.add(name); },
+                el: function () { return shell || video; },
+                tech: function () { return { el: function () { return video; } }; },
+                ready: function (fn) { if (typeof fn === 'function') fn(); return this; },
+                on: on,
+                off: off,
+                src: function (source) {
+                    const url = typeof source === 'string' ? source : (source && source.src);
+                    if (url) video.src = url;
+                },
+                play: function () { return video.play(); },
+                pause: function () { video.pause(); },
+                currentTime: function (value) {
+                    if (typeof value === 'number' && Number.isFinite(value)) video.currentTime = value;
+                    return video.currentTime;
+                },
+                duration: function () { return video.duration; },
+                volume: function (value) {
+                    if (typeof value === 'number' && Number.isFinite(value)) {
+                        video.volume = Math.min(1, Math.max(0, value));
+                    }
+                    return video.volume;
+                },
+                muted: function (value) {
+                    if (typeof value === 'boolean') video.muted = value;
+                    return video.muted;
+                },
+                isFullscreen: isNativeFullscreen,
+                requestFullscreen: function () {
+                    try {
+                        // iOS 上只保证 video 元素的原生全屏
+                        if (typeof video.webkitEnterFullscreen === 'function') {
+                            video.webkitEnterFullscreen();
+                        } else if (shell && typeof shell.requestFullscreen === 'function') {
+                            return shell.requestFullscreen();
+                        }
+                    } catch (error) {
+                        console.warn('进入全屏失败:', error);
+                    }
+                },
+                exitFullscreen: function () {
+                    try {
+                        if (typeof video.webkitExitFullscreen === 'function') {
+                            video.webkitExitFullscreen();
+                        } else if (document.exitFullscreen) {
+                            return document.exitFullscreen();
+                        }
+                    } catch (error) {
+                        console.warn('退出全屏失败:', error);
+                    }
+                },
+                userActive: function () {},
+                reportUserActivity: function () {},
+                dispose: function () {
+                    Array.from(listeners.keys()).forEach(function (event) {
+                        (listeners.get(event) || []).slice().forEach(function (fn) { off(event, fn); });
+                    });
+                    listeners.clear();
+                }
+            };
+        }
+
+        // 原生播放器：Video.js 一行都不加载
+        function createNativePlayer() {
+            const video = document.getElementById('player');
+            const shell = document.getElementById('playerContainer');
+            if (!video || !shell) {
+                showError('播放器初始化失败，请刷新页面重试');
+                return false;
+            }
+
+            // 去掉 Video.js 的类名，避免残留样式干扰；改用系统控制条
+            video.className = 'libretv-native-video';
+            video.controls = true;
+            video.playsInline = true;
+            video.setAttribute('playsinline', '');
+            video.setAttribute('webkit-playsinline', '');
+            video.preload = 'auto';
+            video.disableRemotePlayback = false; // 允许 AirPlay
+
+            player = createNativePlayerShim(video, shell);
+            mediaEl = video;
+            player.volume(0.7);
+            return true;
+        }
+
+        // 创建 Video.js 实例（桌面端 / 需要 hls.js 的浏览器）
+        async function createVideoJsPlayer() {
+            await ensureVideoJsLib();
+            configureVideoJsOnce();
+
             const videoElement = document.getElementById('player');
             if (!videoElement || typeof videojs !== 'function') {
                 showError('播放器初始化失败，请刷新页面重试');
@@ -1562,6 +1799,12 @@
             currentPlaybackEngine = playbackPlan.engine || '';
             setPlayerPlaybackEngine(currentPlaybackEngine);
             resetPlayerQuality();
+
+            // 只有真正走 hls.js 时才需要分片缓存。
+            // iOS / iPadOS / Safari 走原生 HLS，不需要（也不该）在这里碰 IndexedDB。
+            if (currentPlaybackEngine === 'hls.js') {
+                segmentCache.warmup();
+            }
 
             showLoadingLayer('正在连接片源');
             document.getElementById('error').style.display = 'none';
@@ -1682,9 +1925,14 @@
 
             player.on('error', function() {
                 if (mediaEl && mediaEl.currentTime > 1) {
-                    // 以前这里直接 return，中途出错用户只会看到画面冻住、没有任何提示
-                    console.warn('播放中出现媒体错误，已交由 hls.js 恢复逻辑处理');
-                    showToast('播放出现异常，正在尝试恢复…', 'error');
+                    // 播放中途的偶发错误。原生 HLS 重试时会连续上报 error，
+                    // 不做节流就会不停销毁/重建 toast 节点，反而把页面拖卡。
+                    const now = Date.now();
+                    if (now - lastRecoveryToastAt > 5000) {
+                        lastRecoveryToastAt = now;
+                        console.warn('播放中出现媒体错误:', currentPlaybackEngine);
+                        showToast('播放出现异常，正在尝试恢复…', 'error');
+                    }
                     return;
                 }
                 showError('视频播放失败，请检查视频源或网络连接');
@@ -1855,8 +2103,12 @@
             }
         }
 
-        // 中文文案
-        if (typeof videojs !== 'undefined') {
+        // Video.js 的中文文案和 m3u8 接管必须在库加载完成后再执行
+        let videoJsConfigured = false;
+        function configureVideoJsOnce() {
+            if (videoJsConfigured || typeof videojs !== 'function') return;
+            videoJsConfigured = true;
+
             videojs.addLanguage('zh-cn', {
                 'Play': '播放',
                 'Pause': '暂停',
@@ -1882,6 +2134,11 @@
                     '弹窗开始，按 Esc 可取消并关闭窗口。',
                 'End of dialog window.': '弹窗结束。'
             });
+
+            if (videojs.getTech('Html5')) {
+                // 插到最前面，优先于内置的 VHS
+                videojs.getTech('Html5').registerSourceHandler(LibreTvHlsSourceHandler, 0);
+            }
         }
 
         // ===== Video.js × hls.js：接管 m3u8 源 =====
@@ -1907,7 +2164,7 @@
                 // 配置HLS.js选项
                 const hlsConfig = {
                     debug: false,
-                    loader: CustomHlsJsLoader,
+                    loader: getCustomHlsJsLoaderClass() || Hls.DefaultConfig.loader,
                     enableWorker: true,
                     lowLatencyMode: false,
                     // 播放器尺寸小的时候不乱拉高码率：同等带宽下能缓冲更多秒数
@@ -2239,10 +2496,6 @@
             }
         };
 
-        if (typeof videojs !== 'undefined' && videojs.getTech('Html5')) {
-            // 插到最前面，优先于内置的 VHS
-            videojs.getTech('Html5').registerSourceHandler(LibreTvHlsSourceHandler, 0);
-        }
 
 
         // ===== 分片缓存（IndexedDB + LRU）=====
@@ -2697,44 +2950,50 @@
 
         // 便于在控制台排查：await getSegmentCacheStats()
         window.getSegmentCacheStats = function () { return segmentCache.statsAsync(); };
+        // 注意：不要在这里预热。原生 HLS 设备（iPad/iPhone/Safari）根本用不到分片缓存，
+        // 页面一加载就开 IndexedDB 只会白白增加首屏开销。改为 hls.js 真正播放时再预热。
 
-        // 页面加载时后台打开数据库并重建索引，等用户点播放时已经就绪
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', function () { segmentCache.warmup(); });
-        } else {
-            segmentCache.warmup();
-        }
+        // 自定义 Loader：清单做广告过滤，分片走 IndexedDB 缓存。
+        // hls.js 改为按需加载，所以这里必须惰性构造，不能在脚本求值时就 extends。
+        let CustomHlsJsLoaderClass = null;
+        function getCustomHlsJsLoaderClass() {
+            if (CustomHlsJsLoaderClass) return CustomHlsJsLoaderClass;
+            if (typeof Hls === 'undefined') return null;
 
-        // 自定义 Loader：清单做广告过滤，分片走 IndexedDB 缓存
-        class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
-            constructor(config) {
-                super(config);
-                const load = this.load.bind(this);
-                this.load = function(context, config, callbacks) {
-                    // 1) 清单请求：按开关做广告过滤（不再依赖 loader 是否被启用）
-                    if (adFilteringEnabled && context
-                        && (context.type === 'manifest' || context.type === 'level')) {
-                        const onSuccess = callbacks.onSuccess;
-                        callbacks.onSuccess = function(response, stats, ctx, networkDetails) {
-                            if (response && response.data && typeof response.data === 'string') {
-                                response.data = filterAdsFromM3U8(response.data, true);
-                            }
-                            return onSuccess(response, stats, ctx, networkDetails);
-                        };
-                    }
+            const BaseLoader = Hls.DefaultConfig.loader;
+            class CustomHlsJsLoader extends BaseLoader {
+                constructor(config) {
+                    super(config);
+                    const load = this.load.bind(this);
+                    this.load = function(context, config, callbacks) {
+                        // 1) 清单请求：按开关做广告过滤（不再依赖 loader 是否被启用）
+                        if (adFilteringEnabled && context
+                            && (context.type === 'manifest' || context.type === 'level')) {
+                            const onSuccess = callbacks.onSuccess;
+                            callbacks.onSuccess = function(response, stats, ctx, networkDetails) {
+                                if (response && response.data && typeof response.data === 'string') {
+                                    response.data = filterAdsFromM3U8(response.data, true);
+                                }
+                                return onSuccess(response, stats, ctx, networkDetails);
+                            };
+                        }
 
-                    // 2) 分片 / 初始化段 / 解密密钥（都是 arraybuffer）：先查缓存
-                    if (context && context.frag && context.responseType === 'arraybuffer') {
-                        segmentCache.serve(context, config, callbacks, function() {
-                            load(context, config, callbacks);
-                        });
-                        return;
-                    }
+                        // 2) 分片 / 初始化段 / 解密密钥（都是 arraybuffer）：先查缓存
+                        if (context && context.frag && context.responseType === 'arraybuffer') {
+                            segmentCache.serve(context, config, callbacks, function() {
+                                load(context, config, callbacks);
+                            });
+                            return;
+                        }
 
-                    // 执行原始load方法
-                    load(context, config, callbacks);
-                };
+                        // 执行原始load方法
+                        load(context, config, callbacks);
+                    };
+                }
             }
+
+            CustomHlsJsLoaderClass = CustomHlsJsLoader;
+            return CustomHlsJsLoaderClass;
         }
 
         // ===== M3U8 清单广告过滤 =====
