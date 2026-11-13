@@ -12,7 +12,7 @@
 
     <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
     <link rel="stylesheet" href="css/styles.css?v=20261113sourcenetwork2">
-    <link rel="stylesheet" href="css/player.css?v=20251114native1">
+    <link rel="stylesheet" href="css/player.css?v=20251114native3">
 </head>
 <body class="player-page">
     <header class="player-header">
@@ -286,6 +286,20 @@
         let playbackHistoryOpen = false;
         const sharePlaybackUrlCache = new Map();
         const DIRECT_MEDIA_PATH_PATTERN = /\.(?:m3u8|mp4|m4v|webm|ogv|ogg|mov|flv|mkv|ts)$/i;
+
+        // 记录最近一次用户手势。iOS 只在手势有效期内允许带声音的 play()，
+        // 刷新页面这种没有手势的场景如果强行 play()，系统控制条会显示成
+        // "正在播放"（暂停图标）但实际并不播，状态是错的。
+        let lastUserGestureAt = 0;
+        ['pointerdown', 'touchstart', 'click', 'keydown'].forEach(function (name) {
+            document.addEventListener(name, function () {
+                lastUserGestureAt = Date.now();
+            }, { capture: true, passive: true });
+        });
+
+        function hasRecentUserGesture(windowMs) {
+            return lastUserGestureAt > 0 && (Date.now() - lastUserGestureAt) < (windowMs || 1200);
+        }
 
         // ===== 播放器依赖按需加载 =====
         // Video.js ≈ 676KB JS + 47KB CSS，hls.js ≈ 512KB。
@@ -1586,7 +1600,12 @@
                 }
                 if (!created) return;
                 bindPlayerEvents();
-                setupLongPressSpeedControl();
+                // 原生控制条在 video 的 shadow DOM 里，触摸会冒泡到 #player，
+                // 长按倍速会把"按住进度条拖拽"误判成 3 倍速，并 preventDefault 吃掉点击。
+                // 所以原生外壳只用系统手势，不再挂这套逻辑。
+                if (!player.isNative) {
+                    setupLongPressSpeedControl();
+                }
             }
 
             loadPlayerSource(videoUrl, playbackPlan);
@@ -1647,6 +1666,8 @@
             }
 
             return {
+                // 标记当前是原生外壳：控制条、手势等要按系统行为处理
+                isNative: true,
                 addClass: function (name) { if (shell && name) shell.classList.add(name); },
                 el: function () { return shell || video; },
                 tech: function () { return { el: function () { return video; } }; },
@@ -1730,6 +1751,9 @@
             player = createNativePlayerShim(video, shell);
             mediaEl = video;
             player.volume(0.7);
+
+            // 播放/全屏等交互全部交给系统控制条，
+            // 页面上不再额外叠加播放按钮或全屏按钮
             return true;
         }
 
@@ -1820,7 +1844,12 @@
                 return;
             }
 
-            if (!isAppleMobileDevice()) {
+            // 自动起播的条件：
+            // - 非 Apple 设备：照旧尝试，被拦截就走 handleBlockedPlayback
+            // - Apple 设备：必须在用户手势的有效期内（点选集/上一集等），
+            //   否则刷新页面时调用 play() 会让系统控制条停在"播放中"状态却不播
+            const canStartPlayback = !isAppleMobileDevice() || hasRecentUserGesture(1200);
+            if (canStartPlayback) {
                 const playPromise = player.play();
                 if (playPromise && typeof playPromise.catch === 'function') {
                     playPromise.catch(function(error) {
@@ -4593,6 +4622,13 @@
             const container = document.getElementById('playerContainer');
             controlsLocked = !controlsLocked;
             container.classList.toggle('controls-locked', controlsLocked);
+
+            // .controls-locked 只能隐藏 .vjs-* 控制条，
+            // 原生播放器要直接关掉 video.controls 才能真的锁住
+            if (player && player.isNative && mediaEl) {
+                mediaEl.controls = !controlsLocked;
+            }
+
             const icon = document.getElementById('lockIcon');
             // 切换图标：锁 / 解锁
             icon.innerHTML = controlsLocked

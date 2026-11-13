@@ -538,7 +538,8 @@ body.playback-history-open {
     display: block;
     object-fit: contain;
     background-color: #0c0c0b;
-    border-radius: inherit;
+    /* 不在这里补 border-radius：系统控制条（左上角全屏按钮）贴着视频边缘，
+       再裁一次圆角会把它切掉，圆角交给外层 .player-container 处理即可 */
 }
 
 /* 原生播放时蒙层不能挡住系统播放按钮（iOS 上可能要等用户点一下才开始加载） */
