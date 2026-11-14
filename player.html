@@ -1782,6 +1782,12 @@
                 language: 'zh-CN',
                 playbackRates: [0.5, 1, 1.25, 1.5, 2],
                 controlBar: {
+                    // Video.js 自带 skipBackward / skipForward，默认隐藏，
+                    // 只有配置了 skipButtons 才会出现在播放键两侧（可选 5 / 10 / 30 秒）
+                    skipButtons: {
+                        forward: 5,
+                        backward: 5
+                    },
                     pictureInPictureToggle: true,
                     remainingTimeDisplay: true,
                     subsCapsButton: false,
@@ -2151,6 +2157,8 @@
                 'Exit Picture-in-Picture': '退出画中画',
                 'Playback Rate': '播放速度',
                 'Volume Level': '音量',
+                'Skip forward {1} seconds': '快进 {1} 秒',
+                'Skip backward {1} seconds': '后退 {1} 秒',
                 'Current Time': '当前时间',
                 'Duration': '时长',
                 'Remaining Time': '剩余时间',
