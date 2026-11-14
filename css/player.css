@@ -616,6 +616,33 @@ body.playback-history-open {
     font-size: var(--text-sm);
 }
 
+/* ------------------------------------------------------------------
+   控制条防溢出
+   Video.js 的 .vjs-control 是固定 4em/个、flex:none，总宽超过播放器宽度时
+   会被 #player.video-js 的 overflow:hidden 从右侧裁掉，最右边的全屏按钮首当其冲。
+
+   1) 前进 / 后退只在全屏出现 —— 窗口模式下两个按钮要吃掉 8em，
+      常驻就会把全屏按钮挤出可视区
+   2) 进度条允许压缩（默认最小 4em）
+   3) 依赖 responsive:true 打出的布局类（断点见 player.html 的 breakpoints），
+      小屏整体收窄字号，极窄时再让出画中画
+   ------------------------------------------------------------------ */
+#player:not(.vjs-fullscreen) [class*="vjs-skip-"] {
+    display: none;
+}
+
+#player .vjs-progress-control {
+    min-width: 2em;
+}
+
+#player.vjs-layout-small .vjs-control-bar {
+    font-size: var(--text-xs);
+}
+
+#player.vjs-layout-tiny .vjs-picture-in-picture-control {
+    display: none;
+}
+
 /* 无操作后快速收起控制条：播放中与暂停时都隐藏（播完 vjs-ended 时保留） */
 #player.vjs-has-started.vjs-user-inactive:not(.vjs-ended) .vjs-control-bar {
     visibility: visible;

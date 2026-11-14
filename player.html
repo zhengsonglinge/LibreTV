@@ -12,7 +12,7 @@
 
     <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
     <link rel="stylesheet" href="css/styles.css?v=20251115ui1">
-    <link rel="stylesheet" href="css/player.css?v=20251115ui1">
+    <link rel="stylesheet" href="css/player.css?v=20251115ui3">
     <link rel="stylesheet" href="css/ui.css?v=20251115ui1">
 </head>
 <body class="player-page">
@@ -1771,6 +1771,14 @@
 
             player = videojs(videoElement, {
                 controls: true,
+                // 让 Video.js 按播放器实际宽度打上 vjs-layout-* 类，
+                // 默认是 false，不开的话下面依赖这些类的响应式规则全部失效。
+                // 同时把 small 的边界从默认 425 提到 600：
+                // 控制条满配约需 553px，600 以下就该切到精简布局了
+                responsive: true,
+                breakpoints: {
+                    small: 600
+                },
                 // 无操作后隐藏控制条 / 进度条：600ms 触发 + 150ms 淡出，保证 1s 内彻底消失
                 inactivityTimeout: 600,
                 autoplay: false,
