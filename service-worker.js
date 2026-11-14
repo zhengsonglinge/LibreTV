@@ -1,6 +1,6 @@
 const ASSET_VERSION = '20261112sources1';
-const STATIC_CACHE = 'video-index-static-v10';
-const IMAGE_CACHE = 'video-index-images-v10';
+const STATIC_CACHE = 'video-index-static-v11';
+const IMAGE_CACHE = 'video-index-images-v11';
 const IMAGE_CACHE_LIMIT = 120;
 
 const urlsToCache = [
@@ -8,6 +8,7 @@ const urlsToCache = [
   `/css/tailwind.css?v=${ASSET_VERSION}`,
   `/css/styles.css?v=${ASSET_VERSION}`,
   `/css/home.css?v=${ASSET_VERSION}`,
+  `/css/ui.css?v=${ASSET_VERSION}`,
   `/js/app.js?v=${ASSET_VERSION}`,
   `/js/config.js?v=${ASSET_VERSION}`,
   `/js/ui.js?v=${ASSET_VERSION}`,

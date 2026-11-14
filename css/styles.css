@@ -1,18 +1,92 @@
 :root {
-    /* 赛博影视主题配色方案 - 柔和版 */
-    --primary-color: #00ccff;       /* 霓虹蓝主色调 */
-    --primary-light: #33d6ff;       /* 浅霓虹蓝变体 */
-    --secondary-color: #0f1622;     /* 深蓝黑背景色 */
-    --accent-color: #ff3c78;        /* 霓虹粉强调色 */
-    --text-color: #e6f2ff;          /* 柔和的蓝白色文本 */
-    --text-muted: #8599b2;          /* 淡蓝灰色次级文本 */
-    --border-color: rgba(0, 204, 255, 0.15);
-    --page-gradient-start: #0f1622; /* 深蓝黑起始色 */
-    --page-gradient-end: #192231;   /* 深靛蓝结束色 */
-    --card-gradient-start: #121b29; /* 卡片起始色 */
-    --card-gradient-end: #1c2939;   /* 卡片结束色 */
-    --card-accent: rgba(0, 204, 255, 0.12); /* 霓虹蓝卡片强调色 */
-    --card-hover-border: rgba(0, 204, 255, 0.5); /* 悬停边框颜色 */
+    /* ===================================================================
+       全局设计变量（唯一来源）
+       home.css / player.css 只做页面级扩展，不再重复定义颜色与尺度
+       =================================================================== */
+
+    /* ---------- 颜色 ---------- */
+    --canvas: #f3f1ec;
+    --surface: #fffdfa;
+    --surface-soft: #ebe8e1;
+    --ink: #171614;
+    --ink-soft: #4f4b45;
+    --muted: #807a71;
+    --line: rgba(23, 22, 20, 0.11);
+    --line-strong: rgba(23, 22, 20, 0.2);
+    --accent: #2455f5;
+    --accent-hover: #1741ce;
+    --accent-faint: rgba(36, 85, 245, 0.1);
+    --accent-2: #7b5cf0;          /* 渐变第二色 */
+    --on-accent: #fffdfa;         /* 强调色上的文字 */
+    --danger: #d93a45;
+
+    /* ---------- 圆角 ---------- */
+    --radius-2xs: 4px;
+    --radius-xs: 6px;
+    --radius-sm: 9px;
+    --radius-md: 12px;
+    --radius-lg: 18px;
+    --radius-pill: 999px;
+
+    /* ---------- 字号 ---------- */
+    --text-3xs: 0.56rem;
+    --text-2xs: 0.58rem;
+    --text-xs: 0.64rem;
+    --text-sm: 0.72rem;
+    --text-md: 0.78rem;
+    --text-lg: 0.84rem;
+    --text-xl: 1rem;
+    --text-2xl: 1.12rem;
+    --text-3xl: 1.25rem;
+    --text-4xl: 1.42rem;
+    --text-5xl: 1.6rem;
+    --text-6xl: 1.85rem;
+
+    /* ---------- 间距 ---------- */
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 24px;
+    --sp-6: 32px;
+
+    /* ---------- 阴影 ---------- */
+    --shadow-xs: 0 2px 5px rgba(23, 22, 20, 0.16);
+    --shadow-sm: 0 7px 20px rgba(23, 22, 20, 0.14);
+    --shadow-soft: 0 18px 50px rgba(48, 42, 32, 0.09);
+    --shadow: 0 24px 70px rgba(48, 42, 32, 0.14);
+    --shadow-lg: 0 30px 70px -28px rgba(48, 42, 32, 0.28);
+    --shadow-xl: 0 30px 100px rgba(23, 22, 20, 0.25);
+
+    /* ---------- 焦点环（统一可访问性样式）---------- */
+    --focus-ring-color: rgba(36, 85, 245, 0.24);
+    --focus-ring: 3px solid var(--focus-ring-color);
+    --focus-ring-offset: 2px;
+
+    /* ---------- 动效 ---------- */
+    --dur-fast: 120ms;
+    --dur: 180ms;
+    --dur-slow: 240ms;
+    --dur-enter: 360ms;   /* 抽屉 / 面板进场 */
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+    /* ---------- 字体 ---------- */
+    --font-ui: "Avenir Next", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+
+    /* ---------- 旧主题别名（保持既有规则可用，值已并入上面的调色板）---------- */
+    --primary-color: var(--accent);
+    --primary-light: var(--accent-hover);
+    --accent-color: var(--accent-2);
+    --text-color: var(--ink);
+    --text-muted: var(--muted);
+    --border-color: var(--line);
+    --page-gradient-start: var(--canvas);
+    --page-gradient-end: var(--surface-soft);
+    --card-gradient-start: var(--surface);
+    --card-gradient-end: var(--surface-soft);
+    --card-accent: var(--accent-faint);
+    --card-hover-border: rgba(36, 85, 245, 0.5);
 }
 
 .page-bg {
@@ -21,15 +95,15 @@
     /* 柔和赛博点状背景 */
     background-image: 
         linear-gradient(180deg, var(--page-gradient-start), var(--page-gradient-end)),
-        radial-gradient(circle at 25px 25px, rgba(0, 204, 255, 0.04) 2px, transparent 3px),
-        radial-gradient(circle at 75px 75px, rgba(255, 60, 120, 0.02) 1px, transparent 2px),
-        radial-gradient(circle at 50px 50px, rgba(150, 255, 250, 0.015) 1px, transparent 2px);
+        radial-gradient(circle at 25px 25px, rgba(23, 22, 20, 0.035) 2px, transparent 3px),
+        radial-gradient(circle at 75px 75px, rgba(23, 22, 20, 0.02) 1px, transparent 2px),
+        radial-gradient(circle at 50px 50px, rgba(23, 22, 20, 0.015) 1px, transparent 2px);
     background-blend-mode: normal;
     background-size: cover, 100px 100px, 50px 50px, 75px 75px;
 }
 
 button, .card-hover {
-    transition: all 0.3s ease;
+    transition: all var(--dur-slow) var(--ease-out);
 }
 
 /* 改进卡片适应不同内容长度 */
@@ -39,7 +113,7 @@ button, .card-hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     position: relative;
     overflow: hidden;
-    border-radius: 6px;
+    border-radius: var(--radius-xs);
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -74,7 +148,7 @@ button, .card-hover {
     width: 100%;
     height: 100%;
     background: linear-gradient(90deg, transparent, var(--card-accent), transparent);
-    transition: left 0.6s ease;
+    transition: left 0.6s var(--ease-out);
 }
 
 .card-hover:hover {
@@ -98,7 +172,7 @@ button, .card-hover {
     scrollbar-width: thin;
     scrollbar-color: #444 #222;
     transform: translateX(100%);
-    transition: transform 0.3s ease;
+    transition: transform var(--dur-slow) var(--ease-out);
     background: linear-gradient(135deg, var(--page-gradient-end), var(--page-gradient-start));
     border-left: 1px solid var(--primary-color);
 }
@@ -117,7 +191,7 @@ button, .card-hover {
 
 .settings-panel::-webkit-scrollbar-thumb {
     background-color: #444;
-    border-radius: 4px;
+    border-radius: var(--radius-2xs);
 }
 
 .search-button {
@@ -136,13 +210,13 @@ button, .card-hover {
 
 ::-webkit-scrollbar-track {
     background: #111;
-    border-radius: 4px;
+    border-radius: var(--radius-2xs);
 }
 
 ::-webkit-scrollbar-thumb {
     background: #333;
-    border-radius: 4px;
-    transition: all 0.3s ease;
+    border-radius: var(--radius-2xs);
+    transition: all var(--dur-slow) var(--ease-out);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -158,8 +232,8 @@ button, .card-hover {
     background: linear-gradient(135deg, var(--card-gradient-start), var(--card-gradient-end));
     color: var(--text-color);
     padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    font-size: 0.875rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-lg);
     border: 1px solid var(--border-color);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
@@ -171,7 +245,7 @@ button, .card-hover {
 
 .footer {
     width: 100%;
-    transition: all 0.3s ease;
+    transition: all var(--dur-slow) var(--ease-out);
     margin-top: auto;
     background: linear-gradient(to bottom, transparent, var(--page-gradient-start));
     border-top: 1px solid var(--border-color);
@@ -245,20 +319,20 @@ body {
 #modal > div {
     background: linear-gradient(135deg, var(--card-gradient-start), var(--card-gradient-end));
     border: 1px solid var(--primary-color);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 15px rgba(0, 204, 255, 0.1);
-    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 15px var(--accent-faint);
+    border-radius: var(--radius-sm);
 }
 
 #modalContent button {
-    background: rgba(0, 204, 255, 0.08);
-    border: 1px solid rgba(0, 204, 255, 0.2);
-    transition: all 0.2s ease;
+    background: var(--accent-faint);
+    border: 1px solid rgba(36, 85, 245, 0.22);
+    transition: all var(--dur) var(--ease-out);
 }
 
 #modalContent button:hover {
-    background: rgba(0, 204, 255, 0.15);
+    background: rgba(36, 85, 245, 0.16);
     border-color: var(--primary-color);
-    box-shadow: 0 0 8px rgba(0, 204, 255, 0.3);
+    box-shadow: 0 0 8px var(--focus-ring-color);
 }
 
 #yellowFilterToggle:checked + .toggle-bg {
@@ -271,7 +345,7 @@ body {
 
 #yellowFilterToggle:focus + .toggle-bg,
 #yellowFilterToggle:hover + .toggle-bg {
-    box-shadow: 0 0 0 2px rgba(0, 204, 255, 0.3);
+    box-shadow: 0 0 0 2px var(--focus-ring-color);
 }
 
 /* 添加广告过滤开关的CSS */
@@ -285,24 +359,24 @@ body {
 
 #adFilterToggle:focus + .toggle-bg,
 #adFilterToggle:hover + .toggle-bg {
-    box-shadow: 0 0 0 2px rgba(0, 204, 255, 0.3);
+    box-shadow: 0 0 0 2px var(--focus-ring-color);
 }
 
 .toggle-dot {
-    transition: transform 0.3s ease-in-out;
+    transition: transform var(--dur-slow) var(--ease-out)-in-out;
     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 
 .toggle-bg {
-    transition: background-color 0.3s ease-in-out;
+    transition: background-color var(--dur-slow) var(--ease-out)-in-out;
 }
 
 #yellowFilterToggle:checked ~ .toggle-dot {
-    box-shadow: 0 2px 4px rgba(0, 204, 255, 0.3);
+    box-shadow: 0 2px 4px var(--focus-ring-color);
 }
 
 #adFilterToggle:checked ~ .toggle-dot {
-    box-shadow: 0 2px 4px rgba(0, 204, 255, 0.3);
+    box-shadow: 0 2px 4px var(--focus-ring-color);
 }
 
 /* 添加API复选框样式 */
@@ -314,7 +388,7 @@ body {
     width: 14px;
     background-color: #222;
     border: 1px solid #333;
-    border-radius: 3px;
+    border-radius: var(--radius-2xs);
     cursor: pointer;
     position: relative;
     outline: none;
@@ -349,12 +423,12 @@ body {
 
 #apiCheckboxes::-webkit-scrollbar-track {
     background: #222;
-    border-radius: 4px;
+    border-radius: var(--radius-2xs);
 }
 
 #apiCheckboxes::-webkit-scrollbar-thumb {
     background-color: #444;
-    border-radius: 4px;
+    border-radius: var(--radius-2xs);
 }
 
 /* 自定义API列表样式 */
@@ -373,7 +447,7 @@ body {
 
 #customApisList::-webkit-scrollbar-thumb {
     background-color: #444;
-    border-radius: 4px;
+    border-radius: var(--radius-2xs);
 }
 
 /* 设置面板滚动样式 */
@@ -392,12 +466,12 @@ body {
 
 .settings-panel::-webkit-scrollbar-thumb {
     background-color: #444;
-    border-radius: 4px;
+    border-radius: var(--radius-2xs);
 }
 
 /* 添加自定义API表单动画 */
 #addCustomApiForm {
-    transition: all 0.3s ease;
+    transition: all var(--dur-slow) var(--ease-out);
     max-height: 0;
     opacity: 0;
     overflow: hidden;
@@ -447,7 +521,7 @@ body {
     margin-top: 0.5rem;
     border-top: 1px solid #333;
     color: #8599b2;
-    font-size: 0.75rem;
+    font-size: var(--text-md);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
@@ -469,7 +543,7 @@ body {
     width: 100%;
     height: 100%;
     background-color: rgba(0,0,0,0.4);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sm);
     z-index: 5;
 }
 
@@ -506,7 +580,7 @@ body {
     width: 100%;
     height: 100%;
     background-color: rgba(0,0,0,0.3);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sm);
     z-index: 5;
 }
 
@@ -540,12 +614,12 @@ body {
 .filter-tooltip {
     background-color: rgba(255, 61, 87, 0.1);
     border: 1px solid rgba(255, 61, 87, 0.2);
-    border-radius: 0.25rem;
+    border-radius: var(--radius-2xs);
     padding: 0.5rem;
     margin-top: 0.5rem;
     display: flex;
     align-items: center;
-    font-size: 0.75rem;
+    font-size: var(--text-md);
     line-height: 1.25;
     position: relative;
     z-index: 10;
@@ -561,7 +635,7 @@ body {
 /* 编辑按钮样式 */
 .custom-api-edit {
     color: #3b82f6;
-    transition: color 0.2s ease;
+    transition: color var(--dur) var(--ease-out);
 }
 
 .custom-api-edit:hover {
@@ -576,8 +650,8 @@ body {
     padding: 0.25rem 0.5rem;
     margin-bottom: 0.25rem;
     background-color: #222;
-    border-radius: 0.25rem;
-    transition: background-color 0.2s ease;
+    border-radius: var(--radius-2xs);
+    transition: background-color var(--dur) var(--ease-out);
 }
 
 #customApisList .api-item:hover {
@@ -603,8 +677,8 @@ body {
     margin-left: 5px;
     padding: 1px 5px;
     border: 1px solid transparent;
-    border-radius: 99px;
-    font-size: 0.52rem;
+    border-radius: var(--radius-pill);
+    font-size: var(--text-3xs);
     font-weight: 700;
     line-height: 1.45;
     letter-spacing: 0.01em;
@@ -635,7 +709,7 @@ body {
     display: inline-flex;
     align-items: center;
     color: #ff6b8b;
-    font-size: 0.7rem;
+    font-size: var(--text-sm);
     font-weight: 500;
     margin-right: 0.35rem;
 }
@@ -643,7 +717,7 @@ body {
 /* 历史记录面板样式 */
 .history-panel {
     box-shadow: 2px 0 10px rgba(0,0,0,0.5);
-    transition: transform 0.3s ease-in-out;
+    transition: transform var(--dur-slow) var(--ease-out)-in-out;
     overflow-y: scroll; /* 始终显示滚动条，防止宽度变化 */
     overflow-x: hidden; /* 防止水平滚动 */
     width: 320px; /* 固定宽度 */
@@ -662,10 +736,10 @@ body {
 /* 历史记录项样式优化 */
 .history-item {
     background: #1a1a1a;
-    border-radius: 6px; /* 减小圆角 */
+    border-radius: var(--radius-xs); /* 减小圆角 */
     border: 1px solid #333;
     overflow: hidden;
-    transition: all 0.2s ease;
+    transition: all var(--dur) var(--ease-out);
     padding: 10px 14px;
     position: relative;
     margin-bottom: 8px; /* 减小底部间距 */
@@ -681,7 +755,7 @@ body {
 /* 添加组悬停效果，使删除按钮在悬停时显示 */
 .history-item .delete-btn {
     opacity: 0;
-    transition: opacity 0.2s ease;
+    transition: opacity var(--dur) var(--ease-out);
 }
 
 .history-item:hover .delete-btn {
@@ -695,7 +769,7 @@ body {
 
 .history-title {
     font-weight: 500;
-    font-size: 0.95rem; /* 减小字体大小 */
+    font-size: var(--text-xl); /* 减小字体大小 */
     margin-bottom: 2px; /* 减小底部边距 */
     overflow: hidden;
     text-overflow: ellipsis;
@@ -704,7 +778,7 @@ body {
 
 .history-meta {
     color: #bbb;
-    font-size: 0.75rem; /* 减小字体大小 */
+    font-size: var(--text-md); /* 减小字体大小 */
     display: flex;
     flex-wrap: wrap;
     margin-bottom: 1px; /* 减小边距 */
@@ -720,7 +794,7 @@ body {
 
 .history-time {
     color: #888;
-    font-size: 0.7rem; /* 减小字体大小 */
+    font-size: var(--text-sm); /* 减小字体大小 */
     margin-top: 1px; /* 减小顶部边距 */
 }
 
@@ -747,7 +821,7 @@ body {
 
 .history-time {
     color: #888;
-    font-size: 0.8rem;
+    font-size: var(--text-md);
     margin-top: 4px;
 }
 
@@ -773,7 +847,7 @@ body {
 
 .progress-filled {
     height: 100%;
-    background: linear-gradient(to right, #00ccff, #3b82f6);
+    background: linear-gradient(to right, var(--accent), var(--accent-2));
     border-radius: 2px;
 }
 
@@ -792,11 +866,11 @@ body {
     background-color: rgba(0, 0, 0, 0.7);
     color: white;
     padding: 8px 16px;
-    border-radius: 4px;
+    border-radius: var(--radius-2xs);
     font-size: 14px;
     z-index: 100;
     opacity: 0;
-    transition: all 0.3s ease;
+    transition: all var(--dur-slow) var(--ease-out);
 }
 
 .position-restore-hint.show {
@@ -856,7 +930,7 @@ body {
         padding-right: 2px !important;
     }
     .custom-title-scroll {
-        font-size: 1rem;
+        font-size: var(--text-xl);
     }
 }
 
@@ -909,13 +983,13 @@ body {
 
 /* 增加卡片内字体大小 */
 .card-hover h3 {
-    font-size: 0.95rem; /* 增加标题字体大小 */
+    font-size: var(--text-xl); /* 增加标题字体大小 */
     line-height: 1.3rem;
     margin-bottom: 0.5rem;
 }
 
 .card-hover p {
-    font-size: 0.8rem; /* 增加描述字体大小 */
+    font-size: var(--text-md); /* 增加描述字体大小 */
 }
 
 /* 优化卡片内元素间距 */

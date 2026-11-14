@@ -1,0 +1,156 @@
+/* ===================================================================
+   组件统一层
+   -------------------------------------------------------------------
+   所有页面最后加载，只放「跨页面必须一致」的交互与外观规范。
+   设计变量（颜色 / 圆角 / 字号 / 间距 / 动效 / 阴影）统一在
+   css/styles.css 的 :root 中定义，本文件只负责把它们用到组件上。
+
+   选择器刻意保持低特异性：页面自己的规则（.header-action 等）
+   依然优先，这里只补齐各页面没有统一声明的部分。
+   =================================================================== */
+
+/* ------------------------------------------------------------------
+   1. 可交互元素：统一过渡时长与缓动
+   ------------------------------------------------------------------ */
+button,
+[role="button"],
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+summary,
+a {
+    transition:
+        color var(--dur) var(--ease-out),
+        background-color var(--dur) var(--ease-out),
+        border-color var(--dur) var(--ease-out),
+        box-shadow var(--dur) var(--ease-out),
+        transform var(--dur) var(--ease-out);
+}
+
+button,
+[role="button"],
+input[type="button"],
+input[type="submit"] {
+    font-family: var(--font-ui);
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* 按压反馈：统一的 1px 下沉（排除播放器内部控件，避免影响原生外观） */
+button:not(:disabled):not([class*="vjs-"]):active,
+[role="button"]:not([aria-disabled="true"]):active {
+    transform: translateY(1px);
+}
+
+/* 禁用态统一 */
+button:disabled,
+[role="button"][aria-disabled="true"],
+button.is-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/* ------------------------------------------------------------------
+   2. 焦点环：统一颜色 / 粗细 / 偏移
+   ------------------------------------------------------------------ */
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
+}
+
+/* ------------------------------------------------------------------
+   3. 表单控件
+   ------------------------------------------------------------------ */
+input,
+select,
+textarea {
+    font-family: var(--font-ui);
+    transition:
+        border-color var(--dur) var(--ease-out),
+        box-shadow var(--dur) var(--ease-out),
+        background-color var(--dur) var(--ease-out);
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: var(--muted);
+    opacity: 0.9;
+}
+
+/* ------------------------------------------------------------------
+   4. 徽标 / 标签：统一胶囊形状
+   ------------------------------------------------------------------ */
+.source-badge,
+.rating-badge,
+.player-history-badge {
+    border-radius: var(--radius-pill);
+}
+
+/* ------------------------------------------------------------------
+   5. 可滚动面板：统一细滚动条
+   ------------------------------------------------------------------ */
+.player-history-list,
+.player-library-panel,
+.source-switch-list,
+.episodes-list,
+.results-grid,
+.settings-panel,
+.history-panel {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+}
+
+.player-history-list::-webkit-scrollbar,
+.player-library-panel::-webkit-scrollbar,
+.source-switch-list::-webkit-scrollbar,
+.episodes-list::-webkit-scrollbar,
+.results-grid::-webkit-scrollbar,
+.settings-panel::-webkit-scrollbar,
+.history-panel::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.player-history-list::-webkit-scrollbar-thumb,
+.player-library-panel::-webkit-scrollbar-thumb,
+.source-switch-list::-webkit-scrollbar-thumb,
+.episodes-list::-webkit-scrollbar-thumb,
+.results-grid::-webkit-scrollbar-thumb,
+.settings-panel::-webkit-scrollbar-thumb,
+.history-panel::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: var(--radius-pill);
+    background-clip: content-box;
+    background-color: var(--line-strong);
+}
+
+.player-history-list::-webkit-scrollbar-thumb:hover,
+.player-library-panel::-webkit-scrollbar-thumb:hover,
+.source-switch-list::-webkit-scrollbar-thumb:hover,
+.episodes-list::-webkit-scrollbar-thumb:hover,
+.results-grid::-webkit-scrollbar-thumb:hover,
+.settings-panel::-webkit-scrollbar-thumb:hover,
+.history-panel::-webkit-scrollbar-thumb:hover {
+    background-color: var(--muted);
+}
+
+/* ------------------------------------------------------------------
+   6. 减少动效偏好
+   ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+    }
+}
