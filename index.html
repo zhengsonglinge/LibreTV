@@ -30,9 +30,9 @@
     <link rel="canonical" href="https://video.zhengsongling.com/">
     
     <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
-    <link rel="stylesheet" href="css/styles.css?v=20251115ui1">
-    <link rel="stylesheet" href="css/home.css?v=20251115ui1">
-    <link rel="stylesheet" href="css/ui.css?v=20251115ui1">
+    <link rel="stylesheet" href="css/styles.css?v=20261121ui1">
+    <link rel="stylesheet" href="css/home.css?v=20261121ui1">
+    <link rel="stylesheet" href="css/ui.css?v=20261121ui1">
 </head>
 <body class="page-bg text-white">
     <header class="site-header">
@@ -61,26 +61,50 @@
         </div>
     </header>
 
-    <div id="historyPanel" class="drawer history-panel" aria-label="观看历史" aria-hidden="true">
+    <div id="drawerBackdrop" class="drawer-backdrop" aria-hidden="true" onclick="closeAllDrawers()"></div>
+
+    <aside id="historyPanel" class="drawer history-panel" aria-label="观看历史" aria-hidden="true">
         <div class="drawer-header">
-            <h3 class="drawer-heading">观看历史</h3>
-            <button onclick="toggleHistory()" class="drawer-close" aria-label="关闭历史">&times;</button>
+            <div>
+                <span class="drawer-kicker">History</span>
+                <h3 class="drawer-heading">观看历史</h3>
+            </div>
+            <button onclick="toggleHistory()" class="drawer-close" aria-label="关闭历史">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M6 6l12 12M18 6L6 18"></path>
+                </svg>
+            </button>
         </div>
-        <div id="historyList" class="pb-4">
+        <div class="history-toolbar">
+            <span id="historyCount">0 条记录</span>
+        </div>
+        <div id="historyList" class="drawer-body history-list">
             <!-- 历史记录将在这里动态显示 -->
-            <div class="text-center text-gray-500 py-8">暂无观看记录</div>
+            <div class="history-empty">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span>暂无观看记录</span>
+            </div>
         </div>
         <div class="history-panel-footer">
             <button onclick="clearViewingHistory()">清空历史记录</button>
         </div>
-    </div>
+    </aside>
 
-    <div id="settingsPanel" class="drawer settings-panel" aria-label="设置面板" aria-hidden="true">
+    <aside id="settingsPanel" class="drawer settings-panel" aria-label="设置面板" aria-hidden="true">
         <div class="drawer-header">
-            <h3 class="drawer-heading">设置</h3>
-            <button onclick="toggleSettings()" class="drawer-close" aria-label="关闭设置">&times;</button>
+            <div>
+                <span class="drawer-kicker">Preferences</span>
+                <h3 class="drawer-heading">设置</h3>
+            </div>
+            <button onclick="toggleSettings()" class="drawer-close" aria-label="关闭设置">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M6 6l12 12M18 6L6 18"></path>
+                </svg>
+            </button>
         </div>
-        <div>
+        <div class="drawer-body settings-body">
             <section class="settings-section">
                 <label class="settings-section-label">数据源</label>
                 <div class="settings-actions">
@@ -161,11 +185,13 @@
 
             <section class="settings-section">
                 <label class="settings-section-label">配置</label>
-                <button onclick="importConfig()" class="settings-wide-button">导入配置</button>
-                <button onclick="exportConfig()" class="settings-wide-button">导出配置</button>
+                <div class="settings-button-row">
+                    <button onclick="importConfig()" class="settings-wide-button">导入配置</button>
+                    <button onclick="exportConfig()" class="settings-wide-button">导出配置</button>
+                </div>
             </section>
         </div>
-    </div>
+    </aside>
 
     <main class="site-main">
         <div class="site-container">
@@ -186,6 +212,12 @@
                                placeholder="输入电影、剧集或节目名称"
                                autocomplete="off"
                                aria-label="视频搜索框">
+                        <kbd id="searchKbd" class="search-kbd" aria-hidden="true">/</kbd>
+                        <button type="button" id="searchClearBtn" class="search-clear" aria-label="清空搜索" hidden>
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M6 6l12 12M18 6L6 18"></path>
+                            </svg>
+                        </button>
                         <button onclick="search()" class="search-submit" aria-label="搜索">
                             <span>搜索</span>
                             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -237,6 +269,16 @@
         </div>
     </main>
 
+    <footer class="site-footer">
+        <div class="site-container site-footer-inner">
+            <p class="site-footer-note">仅提供公开视频源索引与播放，不存储任何媒体内容</p>
+            <nav class="site-footer-links" aria-label="页面链接">
+                <a href="about.html">关于本站</a>
+                <a href="privacy.html">隐私政策</a>
+            </nav>
+        </div>
+    </footer>
+
     <!-- 详情模态框 -->
     <div id="modal" class="fixed inset-0 bg-black/95 hidden flex items-center justify-center transition-opacity duration-300 z-40"
          role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true">
@@ -271,7 +313,8 @@
     </div>
 
     <!-- 错误提示框 -->
-    <div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 opacity-0 -translate-y-full">
+    <div id="toast" class="site-toast" role="status" aria-live="polite">
+        <span class="site-toast-dot" aria-hidden="true"></span>
         <p id="toastMessage"></p>
     </div>
 
@@ -306,11 +349,11 @@
         window._jsSha256 = window.sha256;
     </script>
     <script src="js/config.js?v=20261113bfzydirect1"></script>
-    <script src="js/ui.js?v=20261113blobguard1"></script>
+    <script src="js/ui.js?v=20261121ui1"></script>
     <script src="js/api.js?v=20261112sources1"></script>
     <script src="js/password.js?v=20261112sources1"></script>
-    <script src="js/app.js?v=20261114modal2"></script>
-    <script src="js/douban.js?v=20261112doubancache1"></script>
+    <script src="js/app.js?v=20261121ui1"></script>
+    <script src="js/douban.js?v=20261121ui1"></script>
 
     <!-- PWA 注册 -->
     <script>

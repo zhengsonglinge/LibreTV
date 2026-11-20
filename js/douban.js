@@ -339,20 +339,32 @@ function renderRecommend(tag, pageLimit, pageStart) {
 
     container.querySelectorAll(".poster-loading").forEach(overlay => overlay.remove());
 
-    const loadingOverlay = document.createElement("div");
-    loadingOverlay.className = "poster-loading";
+    const hasExistingCards = container.querySelector(".poster-card") !== null;
+    if (!hasExistingCards) {
+        const skeletonCount = Math.min(pageLimit || 12, 12);
+        container.innerHTML = Array.from({ length: skeletonCount }, () => `
+            <div class="poster-skeleton" aria-hidden="true">
+                <div class="poster-skeleton-frame"></div>
+                <div class="poster-skeleton-line"></div>
+                <div class="poster-skeleton-line is-short"></div>
+            </div>
+        `).join('');
+    } else {
+        const loadingOverlay = document.createElement("div");
+        loadingOverlay.className = "poster-loading";
 
-    const loadingContent = document.createElement("div");
-    loadingContent.className = "poster-loading-inner";
-    loadingContent.innerHTML = `
-      <span class="poster-loading-spinner"></span>
-      <span>正在更新片单</span>
-    `;
-    loadingOverlay.appendChild(loadingContent);
+        const loadingContent = document.createElement("div");
+        loadingContent.className = "poster-loading-inner";
+        loadingContent.innerHTML = `
+          <span class="poster-loading-spinner"></span>
+          <span>正在更新片单</span>
+        `;
+        loadingOverlay.appendChild(loadingContent);
 
-    // 冻结原有内容，并添加加载状态
-    container.classList.add("relative");
-    container.appendChild(loadingOverlay);
+        // 冻结原有内容，并添加加载状态
+        container.classList.add("relative");
+        container.appendChild(loadingOverlay);
+    }
     
     const target = `https://movie.douban.com/j/search_subjects?type=${doubanMovieTvCurrentSwitch}&tag=${tag}&sort=recommend&page_limit=${pageLimit}&page_start=${pageStart}`;
     
@@ -366,8 +378,12 @@ function renderRecommend(tag, pageLimit, pageStart) {
             container.innerHTML = `
                 <div class="empty-state">
                     <div>
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"></path>
+                        </svg>
                         <h3>片单暂时无法加载</h3>
                         <p>请稍后重试，或检查当前网络连接</p>
+                        <button type="button" class="empty-state-action" onclick="renderRecommend(doubanCurrentTag, doubanPageSize, doubanPageStart)">重新加载</button>
                     </div>
                 </div>
             `;

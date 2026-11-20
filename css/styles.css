@@ -363,12 +363,12 @@ body {
 }
 
 .toggle-dot {
-    transition: transform var(--dur-slow) var(--ease-out)-in-out;
+    transition: transform var(--dur-slow) var(--ease-in-out);
     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 
 .toggle-bg {
-    transition: background-color var(--dur-slow) var(--ease-out)-in-out;
+    transition: background-color var(--dur-slow) var(--ease-in-out);
 }
 
 #yellowFilterToggle:checked ~ .toggle-dot {
@@ -717,12 +717,12 @@ body {
 /* 历史记录面板样式 */
 .history-panel {
     box-shadow: 2px 0 10px rgba(0,0,0,0.5);
-    transition: transform var(--dur-slow) var(--ease-out)-in-out;
-    overflow-y: scroll; /* 始终显示滚动条，防止宽度变化 */
-    overflow-x: hidden; /* 防止水平滚动 */
-    width: 320px; /* 固定宽度 */
-    box-sizing: border-box; /* 确保padding不影响总宽度 */
-    scrollbar-gutter: stable; /* 现代浏览器：为滚动条预留空间 */
+    transition: transform var(--dur-slow) var(--ease-in-out);
+    overflow-y: auto;
+    overflow-x: hidden;
+    width: 320px;
+    box-sizing: border-box;
+    scrollbar-gutter: stable;
 }
 
 .history-panel.show {

@@ -578,22 +578,84 @@ function removeCustomApi(index) {
     showToast('已移除自定义API: ' + apiName, 'info');
 }
 
+function syncSearchInputControls() {
+    const input = document.getElementById('searchInput');
+    const clearBtn = document.getElementById('searchClearBtn');
+    const kbd = document.getElementById('searchKbd');
+    const hasValue = !!(input && input.value.length > 0);
+    if (clearBtn) clearBtn.hidden = !hasValue;
+    if (kbd) kbd.classList.toggle('is-hidden', hasValue);
+}
+
 // 设置事件监听器
 function setupEventListeners() {
-    // 回车搜索
-    document.getElementById('searchInput').addEventListener('keypress', function (e) {
-        if (e.key === 'Enter') {
-            search();
+    const searchInput = document.getElementById('searchInput');
+    const searchClearBtn = document.getElementById('searchClearBtn');
+
+    // 回车搜索 & 清空按钮状态
+    if (searchInput) {
+        searchInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                search();
+            }
+        });
+        searchInput.addEventListener('input', syncSearchInputControls);
+        syncSearchInputControls();
+    }
+
+    if (searchClearBtn && searchInput) {
+        searchClearBtn.addEventListener('click', function () {
+            searchInput.value = '';
+            syncSearchInputControls();
+            searchInput.focus();
+        });
+    }
+
+    // 全局快捷键：'/' 聚焦搜索框，'Escape' 关闭抽屉或详情弹窗
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('modal');
+            if (modal && !modal.classList.contains('hidden')) {
+                closeModal();
+                return;
+            }
+            if (typeof closeAllDrawers === 'function') {
+                closeAllDrawers();
+            }
+            return;
+        }
+
+        if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            const activeTag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
+            if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
+            if (searchInput) {
+                e.preventDefault();
+                searchInput.focus();
+                searchInput.select();
+            }
         }
     });
 
-    // 点击外部关闭设置面板
+    // 点击外部关闭抽屉面板
     document.addEventListener('click', function (e) {
-        const panel = document.getElementById('settingsPanel');
+        const settingsPanel = document.getElementById('settingsPanel');
         const settingsButton = document.querySelector('button[onclick="toggleSettings(event)"]');
+        const historyPanel = document.getElementById('historyPanel');
+        const historyButton = document.querySelector('button[onclick="toggleHistory(event)"]');
 
-        if (!panel.contains(e.target) && !settingsButton.contains(e.target) && panel.classList.contains('show')) {
-            panel.classList.remove('show');
+        let changed = false;
+        if (settingsPanel && settingsPanel.classList.contains('show') &&
+            !settingsPanel.contains(e.target) && (!settingsButton || !settingsButton.contains(e.target))) {
+            settingsPanel.classList.remove('show');
+            changed = true;
+        }
+        if (historyPanel && historyPanel.classList.contains('show') &&
+            !historyPanel.contains(e.target) && (!historyButton || !historyButton.contains(e.target))) {
+            historyPanel.classList.remove('show');
+            changed = true;
+        }
+        if (changed && typeof syncDrawerState === 'function') {
+            syncDrawerState();
         }
     });
 
@@ -635,6 +697,7 @@ function resetSearchArea() {
     // 清理搜索结果
     document.getElementById('results').innerHTML = '';
     document.getElementById('searchInput').value = '';
+    syncSearchInputControls();
     document.getElementById('searchResultsCount').textContent = '0';
     const resultsFooter = document.getElementById('resultsFooter');
     const resultsStatus = document.getElementById('searchResultsStatus');
@@ -1424,15 +1487,3 @@ function saveStringAsFile(content, fileName) {
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
 }
-
-// app.js 或路由文件中
-const authMiddleware = require('./middleware/auth');
-const config = require('./config');
-
-// 对所有请求启用鉴权（按需调整作用范围）
-if (config.auth.enabled) {
-    app.use(authMiddleware);
-}
-
-// 或者针对特定路由
-app.use('/api', authMiddleware);
