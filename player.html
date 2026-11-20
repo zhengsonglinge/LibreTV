@@ -542,6 +542,13 @@
             if (videoUrl) {
                 let playableVideoUrl = videoUrl;
                 if (isSharePageUrl(videoUrl)) {
+                    // 解析分享页的同时并行预下载播放库，消除串行等待
+                    if (!shouldUseNativePlayerShell()) {
+                        ensureVideoJsLib().catch(() => {});
+                        if (isHlsJsSupported()) {
+                            ensureHlsLib().catch(() => {});
+                        }
+                    }
                     document.getElementById('loading').style.display = 'flex';
                     document.getElementById('loading').innerHTML = `
                         <div class="loading-spinner"></div>
@@ -585,7 +592,12 @@
             updateOrderButton();
 
             if (videoUrl) {
-                openSourceSwitcher();
+                // 让出首播带宽与代理连接：若已失败则立即搜索片源，否则等首帧就绪或 2.5s 后再搜
+                if (document.getElementById('error')?.style.display === 'flex') {
+                    openSourceSwitcher();
+                } else {
+                    scheduleSourceSwitcher();
+                }
             }
 
             // 添加键盘快捷键事件监听
@@ -1178,7 +1190,37 @@
             renderSourceSwitchList();
         }
 
+        let sourceSwitcherDeferredTimer = null;
+        let sourceSwitcherDeferred = false;
+
+        function scheduleSourceSwitcher(delayMs = 2500) {
+            if (!currentVideoTitle || currentVideoTitle === '未知视频') return;
+            if (sourceSwitchListState.loading || sourceSwitchListState.completed) return;
+            sourceSwitcherDeferred = true;
+            if (sourceSwitcherDeferredTimer) {
+                clearTimeout(sourceSwitcherDeferredTimer);
+            }
+            sourceSwitcherDeferredTimer = setTimeout(() => {
+                flushDeferredSourceSwitcher();
+            }, delayMs);
+        }
+
+        function flushDeferredSourceSwitcher() {
+            if (sourceSwitcherDeferredTimer) {
+                clearTimeout(sourceSwitcherDeferredTimer);
+                sourceSwitcherDeferredTimer = null;
+            }
+            if (!sourceSwitcherDeferred) return;
+            sourceSwitcherDeferred = false;
+            openSourceSwitcher();
+        }
+
         function openSourceSwitcher() {
+            if (sourceSwitcherDeferredTimer) {
+                clearTimeout(sourceSwitcherDeferredTimer);
+                sourceSwitcherDeferredTimer = null;
+            }
+            sourceSwitcherDeferred = false;
             if (!currentVideoTitle || currentVideoTitle === '未知视频') {
                 return;
             }
@@ -1364,6 +1406,7 @@
         }
 
         function scrollToSources() {
+            flushDeferredSourceSwitcher();
             const card = document.getElementById('sourcesCard') || document.getElementById('sourcesHeading');
             if (!card) return;
             card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1677,10 +1720,12 @@
                     if (shouldUseNativePlayerShell()) {
                         created = createNativePlayer();
                     } else {
-                        // 只有真正需要 hls.js 时才去下载它（约 512KB）
+                        // 并行下载 hls.js（约 512KB）与 Video.js（约 676KB + 47KB CSS），避免串行等待
+                        const libTasks = [ensureVideoJsLib()];
                         if (playbackPlan.engine === 'hls.js') {
-                            await ensureHlsLib();
+                            libTasks.push(ensureHlsLib());
                         }
+                        await Promise.all(libTasks);
                         created = await createVideoJsPlayer();
                     }
                 } catch (error) {
@@ -2044,6 +2089,14 @@
             if (!player) return;
 
             player.on('fullscreenchange', handlePlayerFullscreenChange);
+
+            player.on('canplay', function() {
+                flushDeferredSourceSwitcher();
+            });
+
+            player.on('playing', function() {
+                flushDeferredSourceSwitcher();
+            });
 
             player.on('loadedmetadata', function() {
                 document.getElementById('loading').style.display = 'none';
@@ -3219,6 +3272,7 @@
             document.getElementById('loading').style.display = 'none';
             document.getElementById('error').style.display = 'flex';
             document.getElementById('error-message').textContent = message;
+            flushDeferredSourceSwitcher();
         }
 
         // 更新集数信息

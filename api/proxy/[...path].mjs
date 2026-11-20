@@ -40,6 +40,28 @@ const FILTER_DISCONTINUITY = false;
 
 // --- 辅助函数 ---
 
+const STREAM_MEDIA_EXTENSIONS = [
+    '.ts', '.m4s', '.mp4', '.m4v', '.m4a', '.webm', '.mkv', '.mov', '.flv',
+    '.aac', '.mp3', '.ogg', '.wav', '.flac', '.opus',
+    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.bmp', '.ico'
+];
+
+function isDirectStreamMedia(targetUrl, contentType) {
+    const lowerType = (contentType || '').toLowerCase();
+    if (lowerType.startsWith('video/') || lowerType.startsWith('audio/') || lowerType.startsWith('image/')) {
+        return true;
+    }
+    try {
+        const pathname = new URL(targetUrl).pathname.toLowerCase();
+        if (pathname.endsWith('.m3u8') || pathname.endsWith('.m3u')) {
+            return false;
+        }
+        return STREAM_MEDIA_EXTENSIONS.some(ext => pathname.endsWith(ext));
+    } catch {
+        return false;
+    }
+}
+
 // 判断 Content-Type 是否为文本类（只有文本才可以用 text() 读取）
 function isTextContentType(contentType) {
     if (!contentType) return false;
@@ -160,13 +182,15 @@ function getRandomUserAgent() {
     return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
-async function fetchContentWithType(targetUrl, requestHeaders) {
+async function fetchUpstreamResponse(targetUrl, requestHeaders) {
     const targetHost = new URL(targetUrl).hostname;
     // 准备请求头
     const headers = {
         'User-Agent': getRandomUserAgent(),
         'Accept': requestHeaders['accept'] || '*/*', // 传递原始 Accept 头（如果有）
         'Accept-Language': requestHeaders['accept-language'] || 'zh-CN,zh;q=0.9,en;q=0.8',
+        // 透传 Range 头，支持分片/MP4 拖动快进
+        'Range': requestHeaders['range'],
         // 尝试设置一个合理的 Referer
         'Referer': targetHost.endsWith('doubanio.com')
             ? 'https://movie.douban.com/'
@@ -191,20 +215,22 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
             throw err; // 抛出错误
         }
 
-        // 读取响应内容（文本/二进制分开处理）
-        const contentType = response.headers.get('content-type') || '';
-        const content = await readResponseBody(response, contentType);
-        const contentLength = content.length;
-        logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${contentLength}`);
-        // 返回结果
-        return { content, contentType, responseHeaders: response.headers };
-
+        return response;
     } catch (error) {
         // 捕获 fetch 本身的错误（网络、超时等）或上面抛出的 HTTP 错误
         logDebug(`请求异常 ${targetUrl}: ${error.message}`);
         // 重新抛出，确保包含原始错误信息
         throw new Error(`请求目标 URL 失败 ${targetUrl}: ${error.message}`);
     }
+}
+
+async function fetchContentWithType(targetUrl, requestHeaders) {
+    const response = await fetchUpstreamResponse(targetUrl, requestHeaders);
+    const contentType = response.headers.get('content-type') || '';
+    const content = await readResponseBody(response, contentType);
+    const contentLength = content.length;
+    logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${contentLength}`);
+    return { content, contentType, responseHeaders: response.headers };
 }
 
 function isM3u8Content(content, contentType) {
@@ -272,64 +298,52 @@ async function processM3u8Content(targetUrl, content, recursionDepth = 0) {
     return processMediaPlaylist(targetUrl, content);
 }
 
-async function processMasterPlaylist(url, content, recursionDepth) {
-    // 检查递归深度
-    if (recursionDepth > MAX_RECURSION) {
-        throw new Error(`处理主播放列表时，递归深度超过最大限制 (${MAX_RECURSION}): ${url}`);
+async function processMasterPlaylist(url, content) {
+    // 保留所有码率档位并仅重写子清单与音轨 URI，让前端 hls.js 正常执行 ABR 自适应码率切换，
+    // 同时省去代理侧额外一次递归拉取子清单的 RTT。
+    if (Buffer.isBuffer(content)) {
+        content = content.toString('utf8');
     }
     const baseUrl = getBaseUrl(url);
     const lines = content.split('\n');
-    let highestBandwidth = -1;
-    let bestVariantUrl = '';
+    const output = [];
 
-    // 查找最高带宽的流
     for (let i = 0; i < lines.length; i++) {
-        if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
-            const bandwidthMatch = lines[i].match(/BANDWIDTH=(\d+)/);
-            const currentBandwidth = bandwidthMatch ? parseInt(bandwidthMatch[1], 10) : 0;
-            let variantUriLine = '';
-            // 找到下一行的 URI
-            for (let j = i + 1; j < lines.length; j++) {
-                const line = lines[j].trim();
-                if (line && !line.startsWith('#')) { variantUriLine = line; i = j; break; }
-            }
-            if (variantUriLine && currentBandwidth >= highestBandwidth) {
-                highestBandwidth = currentBandwidth;
-                bestVariantUrl = resolveUrl(baseUrl, variantUriLine);
-            }
+        const line = lines[i].trim();
+        if (!line && i === lines.length - 1) {
+            output.push(line);
+            continue;
         }
-    }
-    // 如果没有找到带宽信息，尝试查找第一个 .m3u8 链接
-    if (!bestVariantUrl) {
-        logDebug(`主播放列表中未找到 BANDWIDTH 信息，尝试查找第一个 URI: ${url}`);
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
-             // 更可靠地匹配 .m3u8 链接
-            if (line && !line.startsWith('#') && line.match(/\.m3u8($|\?.*)/i)) {
-                bestVariantUrl = resolveUrl(baseUrl, line);
-                logDebug(`备选方案: 找到第一个子播放列表 URI: ${bestVariantUrl}`);
-                break;
-            }
+        if (!line) continue;
+
+        if (line.startsWith('#EXT-X-MEDIA:') || line.startsWith('#EXT-X-I-FRAME-STREAM-INF:')) {
+            output.push(line.replace(/URI="([^"]+)"/, (match, uri) => {
+                const absoluteUri = resolveUrl(baseUrl, uri);
+                return `URI="${rewriteUrlToProxy(absoluteUri)}"`;
+            }));
+            continue;
         }
-    }
-    // 如果仍然没有找到子列表 URL
-    if (!bestVariantUrl) {
-        logDebug(`在主播放列表 ${url} 中未找到有效的子列表 URI，将其作为媒体列表处理。`);
-        return processMediaPlaylist(url, content);
+
+        if (line.startsWith('#EXT-X-KEY')) {
+            output.push(processKeyLine(line, baseUrl));
+            continue;
+        }
+
+        if (line.startsWith('#EXT-X-MAP')) {
+            output.push(processMapLine(line, baseUrl));
+            continue;
+        }
+
+        if (!line.startsWith('#')) {
+            const absoluteUrl = resolveUrl(baseUrl, line);
+            output.push(rewriteUrlToProxy(absoluteUrl));
+            continue;
+        }
+
+        output.push(line);
     }
 
-    logDebug(`选择的子播放列表 (带宽: ${highestBandwidth}): ${bestVariantUrl}`);
-    // 请求选定的子播放列表内容 (注意：这里传递 {} 作为请求头，不传递客户端的原始请求头)
-    const { content: variantContent, contentType: variantContentType } = await fetchContentWithType(bestVariantUrl, {});
-
-    // 检查获取的内容是否是 M3U8
-    if (!isM3u8Content(variantContent, variantContentType)) {
-        logDebug(`获取的子播放列表 ${bestVariantUrl} 不是 M3U8 (类型: ${variantContentType})，将其作为媒体列表处理。`);
-        return processMediaPlaylist(bestVariantUrl, variantContent);
-    }
-
-    // 递归处理获取到的子 M3U8 内容
-    return await processM3u8Content(bestVariantUrl, variantContent, recursionDepth + 1);
+    return output.join('\n');
 }
 
 
@@ -400,7 +414,33 @@ export default async function handler(req, res) {
         console.info(`开始处理目标 URL 的代理请求: ${targetUrl}`);
 
         // --- 获取并处理目标内容 ---
-        const { content, contentType, responseHeaders } = await fetchContentWithType(targetUrl, req.headers);
+        const upstreamResponse = await fetchUpstreamResponse(targetUrl, req.headers);
+        const contentType = upstreamResponse.headers.get('content-type') || '';
+
+        // 明确的视频/音频/图片分片直接流式透传，避免整包缓冲进内存拉高 TTFB
+        if (isDirectStreamMedia(targetUrl, contentType) && upstreamResponse.body) {
+            upstreamResponse.headers.forEach((value, key) => {
+                const lowerKey = key.toLowerCase();
+                if (!lowerKey.startsWith('access-control-') &&
+                    lowerKey !== 'content-encoding' &&
+                    lowerKey !== 'transfer-encoding' &&
+                    lowerKey !== 'connection') {
+                    res.setHeader(key, value);
+                }
+            });
+            res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
+            res.status(upstreamResponse.status || 200);
+            await new Promise((resolve, reject) => {
+                upstreamResponse.body.on('error', reject);
+                res.on('close', resolve);
+                res.on('finish', resolve);
+                upstreamResponse.body.pipe(res);
+            });
+            return;
+        }
+
+        const content = await readResponseBody(upstreamResponse, contentType);
+        const responseHeaders = upstreamResponse.headers;
 
         // --- 如果是 M3U8，处理并返回 ---
         if (isM3u8Content(content, contentType)) {
