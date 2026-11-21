@@ -12,7 +12,7 @@
 
     <link rel="stylesheet" href="css/tailwind.css?v=20261112sources1">
     <link rel="stylesheet" href="css/styles.css?v=20261121ui1">
-    <link rel="stylesheet" href="css/player.css?v=20261121ui2">
+    <link rel="stylesheet" href="css/player.css?v=20261121ui6">
     <link rel="stylesheet" href="css/ui.css?v=20261121ui1">
 </head>
 <body class="player-page">
@@ -1913,8 +1913,8 @@
                 breakpoints: {
                     small: 600
                 },
-                // 无操作后隐藏控制条 / 进度条：600ms 触发 + 150ms 淡出，保证 1s 内彻底消失
-                inactivityTimeout: 600,
+                // 无操作后隐藏控制条：桌面端 600ms 快速隐藏，触屏设备留出 2.2s 方便点击屏幕中央按钮
+                inactivityTimeout: (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ? 2200 : 600,
                 autoplay: false,
                 preload: 'auto',
                 loop: false,
@@ -1924,12 +1924,8 @@
                 language: 'zh-CN',
                 playbackRates: [0.5, 1, 1.25, 1.5, 2],
                 controlBar: {
-                    // Video.js 自带 skipBackward / skipForward，默认隐藏，
-                    // 只有配置了 skipButtons 才会出现在播放键两侧（可选 5 / 10 / 30 秒）
-                    skipButtons: {
-                        forward: 5,
-                        backward: 5
-                    },
+                    // 播放/暂停与快进/后退已移至屏幕中央浮层，底部控制条不再放置，避免手机误触与拥挤
+                    playToggle: false,
                     pictureInPictureToggle: true,
                     remainingTimeDisplay: true,
                     subsCapsButton: false,
@@ -1946,6 +1942,8 @@
                 }
             });
 
+            mountCenterPlaybackControls();
+
             // 把加载/错误蒙层移入播放器内部，全屏时依然可见
             const shell = player.el();
             ['loading', 'error'].forEach(function(id) {
@@ -1956,6 +1954,104 @@
             });
 
             return true;
+        }
+
+        // 在播放画面中央挂载「后退 / 播放暂停 / 前进」浮层按钮（同时兼容全屏与移动端触控）
+        function mountCenterPlaybackControls() {
+            if (!player || player.isNative) return;
+            const shell = player.el();
+            if (!shell || shell.querySelector('.libretv-center-controls')) return;
+
+            const SKIP_SECONDS = 5;
+            const overlay = document.createElement('div');
+            overlay.className = 'libretv-center-controls';
+            overlay.setAttribute('role', 'group');
+            overlay.setAttribute('aria-label', '播放控制');
+
+            const playSvg = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.5 5.25v13.5a1 1 0 0 0 1.54.84l10.16-6.75a1 1 0 0 0 0-1.68L9.04 4.41a1 1 0 0 0-1.54.84z"/></svg>';
+            const pauseSvg = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6.5" y="4.5" width="4" height="15" rx="1.4"/><rect x="13.5" y="4.5" width="4" height="15" rx="1.4"/></svg>';
+            const backSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>';
+            const forwardSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>';
+
+            const backBtn = document.createElement('button');
+            backBtn.type = 'button';
+            backBtn.className = 'libretv-center-btn is-skip';
+            backBtn.setAttribute('aria-label', `后退 ${SKIP_SECONDS} 秒`);
+            backBtn.title = `后退 ${SKIP_SECONDS} 秒`;
+            backBtn.innerHTML = `${backSvg}<span class="libretv-center-skip-sec">${SKIP_SECONDS}</span>`;
+
+            const playBtn = document.createElement('button');
+            playBtn.type = 'button';
+            playBtn.className = 'libretv-center-btn is-play';
+            playBtn.setAttribute('aria-label', '播放');
+            playBtn.title = '播放 / 暂停';
+            playBtn.innerHTML = playSvg;
+
+            const forwardBtn = document.createElement('button');
+            forwardBtn.type = 'button';
+            forwardBtn.className = 'libretv-center-btn is-skip';
+            forwardBtn.setAttribute('aria-label', `前进 ${SKIP_SECONDS} 秒`);
+            forwardBtn.title = `前进 ${SKIP_SECONDS} 秒`;
+            forwardBtn.innerHTML = `${forwardSvg}<span class="libretv-center-skip-sec">${SKIP_SECONDS}</span>`;
+
+            function stopBubble(e) {
+                e.stopPropagation();
+            }
+
+            [backBtn, playBtn, forwardBtn].forEach(btn => {
+                btn.addEventListener('pointerdown', stopBubble);
+                btn.addEventListener('touchstart', stopBubble, { passive: true });
+            });
+
+            function syncPlayIcon() {
+                const paused = !mediaEl || mediaEl.paused || mediaEl.ended;
+                playBtn.innerHTML = paused ? playSvg : pauseSvg;
+                playBtn.setAttribute('aria-label', paused ? '播放' : '暂停');
+                playBtn.classList.toggle('is-playing', !paused);
+            }
+
+            function seekBy(delta) {
+                if (!player || !mediaEl) return;
+                const current = Number(mediaEl.currentTime) || 0;
+                const maxTime = Number.isFinite(mediaEl.duration) ? mediaEl.duration : current + Math.max(0, delta);
+                const nextTime = Math.max(0, Math.min(maxTime, current + delta));
+                player.currentTime(nextTime);
+                player.userActive(true);
+                player.reportUserActivity();
+                showPlayerNotice(delta < 0 ? `后退 ${Math.abs(delta)} 秒` : `前进 ${delta} 秒`, 700);
+            }
+
+            backBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                seekBy(-SKIP_SECONDS);
+            });
+
+            forwardBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                seekBy(SKIP_SECONDS);
+            });
+
+            playBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (!player || !mediaEl) return;
+                player.userActive(true);
+                player.reportUserActivity();
+                if (mediaEl.paused || mediaEl.ended) {
+                    const p = player.play();
+                    if (p && typeof p.catch === 'function') p.catch(() => {});
+                } else {
+                    player.pause();
+                }
+            });
+
+            player.on('play', syncPlayIcon);
+            player.on('playing', syncPlayIcon);
+            player.on('pause', syncPlayIcon);
+            player.on('ended', syncPlayIcon);
+            syncPlayIcon();
+
+            overlay.append(backBtn, playBtn, forwardBtn);
+            shell.appendChild(overlay);
         }
 
         // 获取原生 video 元素（hls.js / 进度监听都基于它）
@@ -3185,61 +3281,305 @@
         }
 
         // ===== M3U8 清单广告过滤 =====
-        // 原则：只丢弃明确的广告分片，绝不删除任何 #EXT 标签
-        // 判断某个分片地址是否明显是广告：只看路径最后两段的名字，
-        // 且必须是完整的 ad / ads / adv / advert 这类词，避免误伤 1000k、seg-1 这类正常分片
+        // 1) 解包 /proxy/<encodedUrl> 还原真实分片地址，避免代理前缀导致特征失效
+        // 2) 结合 #EXT-X-DISCONTINUITY 切分块：识别并剔除插播广告块（异源路径/异前缀短块、明确广告名、夹在正片之间的短插播块）
+        // 3) 剔除插播块后在正片交界处保留单个 #EXT-X-DISCONTINUITY 与有效 KEY/MAP，避免时间戳失步和卡顿
+        function unwrapProxySegmentUrl(rawUrl) {
+            if (!rawUrl || typeof rawUrl !== 'string') return '';
+            const trimmed = rawUrl.trim();
+            if (/^\/proxy\//i.test(trimmed)) {
+                try {
+                    return decodeURIComponent(trimmed.slice('/proxy/'.length));
+                } catch (e) {
+                    return trimmed;
+                }
+            }
+            return trimmed;
+        }
+
         function isAdSegmentUrl(rawUrl) {
-            if (!rawUrl) return false;
+            const target = unwrapProxySegmentUrl(rawUrl);
+            if (!target) return false;
             try {
-                const parsed = new URL(rawUrl, 'https://placeholder.invalid/');
-                const segments = parsed.pathname.split('/').filter(Boolean).slice(-2);
-                return segments.some(function(segment) {
+                const parsed = new URL(target, 'https://placeholder.invalid/');
+                const segments = parsed.pathname.split('/').filter(Boolean);
+                const tail = segments.slice(-3);
+                return tail.some(function(segment) {
                     const base = segment.replace(/\.(?:ts|m4s|mp4|m4v|aac|m4a|cmfv|cmfa)$/i, '');
-                    return /^(?:ad|ads|adv|advert|adverts|adserver|adservice|guanggao|preroll|midroll|postroll)$/i.test(base)
-                        || /^(?:ad|ads|adv|advert)[-_]?(?:pre|mid|post)?roll\d*$/i.test(base);
+                    return /^(?:ad|ads|adv|advert|adverts|adjump|adserver|adservice|guanggao|preroll|midroll|postroll)$/i.test(base)
+                        || /^(?:ad|ads|adv|advert)[-_]?(?:pre|mid|post)?(?:roll|jump|clip|seg)?\d*$/i.test(base);
                 });
             } catch (error) {
                 return false;
             }
         }
 
+        function getSegmentSignature(rawUrl) {
+            const target = unwrapProxySegmentUrl(rawUrl);
+            try {
+                const parsed = new URL(target, 'https://placeholder.invalid/');
+                const host = parsed.hostname === 'placeholder.invalid' ? '' : parsed.hostname.toLowerCase();
+                const parts = parsed.pathname.split('/').filter(Boolean);
+                const fileName = parts.pop() || '';
+                const dir = parts.join('/');
+                // 提取文件名中数字前的前缀（例如 index0001.ts -> index，seg_12.ts -> seg_）
+                const stem = fileName.replace(/\.(?:ts|m4s|mp4|m4v|aac|m4a|cmfv|cmfa)$/i, '');
+                const prefixMatch = stem.match(/^([a-zA-Z_-]+)\d+$/);
+                const filePrefix = prefixMatch ? prefixMatch[1].toLowerCase() : '';
+                return {
+                    dirKey: `${host}/${dir}`,
+                    prefixKey: `${host}/${dir}|${filePrefix}`
+                };
+            } catch (e) {
+                return { dirKey: '', prefixKey: '' };
+            }
+        }
+
+        function parseExtInfDuration(line) {
+            const match = line.match(/^#EXTINF:\s*([\d.]+)/i);
+            return match ? parseFloat(match[1]) || 0 : 0;
+        }
+
         function filterAdsFromM3U8(m3u8Content, strictMode = false) {
             if (!m3u8Content || typeof m3u8Content !== 'string') return m3u8Content || '';
+            // 主播放列表不做分片过滤
+            if (m3u8Content.includes('#EXT-X-STREAM-INF')) return m3u8Content;
 
-            const lines = m3u8Content.split('\n');
-            const filteredLines = [];
-            let droppedSegments = 0;
-            let keptSegments = 0;
+            const lines = m3u8Content.split(/\r?\n/);
+            const headerLines = [];
+            const footerLines = [];
+            const blocks = [];
+            let currentBlock = null;
+            let pendingSegmentLines = [];
+            let pendingDuration = 0;
+            let seenFirstSegmentOrDiscontinuity = false;
+
+            function ensureBlock() {
+                if (!currentBlock) {
+                    currentBlock = {
+                        segments: [],
+                        totalDuration: 0,
+                        hasExplicitAd: false,
+                        dirCounts: new Map(),
+                        prefixCounts: new Map(),
+                        leadingTags: [],
+                        lastKeyLine: '',
+                        lastMapLine: ''
+                    };
+                    blocks.push(currentBlock);
+                }
+                return currentBlock;
+            }
 
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
                 const trimmed = line.trim();
 
-                // 标签行一律保留：删掉 #EXT-X-DISCONTINUITY（或 -SEQUENCE）会让
-                // 时间戳跳变失去重同步点，导致缓冲空洞、卡顿和音画不同步。
-                if (!trimmed || trimmed.startsWith('#')) {
-                    filteredLines.push(line);
+                if (!trimmed) continue;
+
+                if (trimmed === '#EXT-X-ENDLIST') {
+                    footerLines.push(line);
                     continue;
                 }
 
-                // 只有分片地址明确命中广告特征时才丢弃该分片
-                if (isAdSegmentUrl(trimmed)) {
-                    // 连带丢弃它前面紧邻的分片描述行（EXTINF / BYTERANGE），
-                    // 但绝不碰 EXT-X-KEY / EXT-X-MAP 等影响解码的标签
-                    while (filteredLines.length) {
-                        const previous = filteredLines[filteredLines.length - 1].trim();
-                        if (previous.startsWith('#EXTINF') || previous.startsWith('#EXT-X-BYTERANGE')) {
-                            filteredLines.pop();
-                            continue;
-                        }
-                        break;
+                if (trimmed === '#EXT-X-DISCONTINUITY') {
+                    seenFirstSegmentOrDiscontinuity = true;
+                    // 开启一个新的不连续分片块
+                    if (currentBlock && currentBlock.segments.length > 0) {
+                        currentBlock = null;
                     }
-                    droppedSegments++;
+                    ensureBlock();
                     continue;
                 }
 
-                keptSegments++;
-                filteredLines.push(line);
+                if (trimmed.startsWith('#')) {
+                    if (!seenFirstSegmentOrDiscontinuity && !trimmed.startsWith('#EXTINF') && !trimmed.startsWith('#EXT-X-BYTERANGE') && !trimmed.startsWith('#EXT-X-KEY') && !trimmed.startsWith('#EXT-X-MAP')) {
+                        headerLines.push(line);
+                        continue;
+                    }
+
+                    seenFirstSegmentOrDiscontinuity = true;
+                    const block = ensureBlock();
+                    if (trimmed.startsWith('#EXTINF')) {
+                        pendingDuration = parseExtInfDuration(trimmed);
+                        pendingSegmentLines.push(line);
+                    } else if (trimmed.startsWith('#EXT-X-BYTERANGE') || trimmed.startsWith('#EXT-X-PROGRAM-DATE-TIME')) {
+                        pendingSegmentLines.push(line);
+                    } else if (trimmed.startsWith('#EXT-X-KEY')) {
+                        block.lastKeyLine = line;
+                        pendingSegmentLines.push(line);
+                    } else if (trimmed.startsWith('#EXT-X-MAP')) {
+                        block.lastMapLine = line;
+                        pendingSegmentLines.push(line);
+                    } else if (block.segments.length === 0 && pendingSegmentLines.length === 0) {
+                        block.leadingTags.push(line);
+                    } else {
+                        pendingSegmentLines.push(line);
+                    }
+                    continue;
+                }
+
+                // 媒体分片 URI 行
+                seenFirstSegmentOrDiscontinuity = true;
+                const block = ensureBlock();
+                const sig = getSegmentSignature(trimmed);
+                const explicitAd = isAdSegmentUrl(trimmed);
+                if (explicitAd) block.hasExplicitAd = true;
+
+                block.segments.push({
+                    uri: trimmed,
+                    duration: pendingDuration,
+                    lines: [...pendingSegmentLines, line],
+                    explicitAd,
+                    sig
+                });
+                block.totalDuration += pendingDuration;
+                block.dirCounts.set(sig.dirKey, (block.dirCounts.get(sig.dirKey) || 0) + 1);
+                block.prefixCounts.set(sig.prefixKey, (block.prefixCounts.get(sig.prefixKey) || 0) + 1);
+
+                pendingSegmentLines = [];
+                pendingDuration = 0;
+            }
+
+            const nonEmptyBlocks = blocks.filter(b => b.segments.length > 0);
+            if (nonEmptyBlocks.length === 0) {
+                return m3u8Content;
+            }
+
+            // 统计全局正片主导路径与前缀（总时长占比最高者）
+            const globalDirDuration = new Map();
+            const globalPrefixDuration = new Map();
+            let totalPlaylistDuration = 0;
+
+            nonEmptyBlocks.forEach(block => {
+                totalPlaylistDuration += block.totalDuration;
+                block.segments.forEach(seg => {
+                    const d = seg.duration || 1;
+                    globalDirDuration.set(seg.sig.dirKey, (globalDirDuration.get(seg.sig.dirKey) || 0) + d);
+                    globalPrefixDuration.set(seg.sig.prefixKey, (globalPrefixDuration.get(seg.sig.prefixKey) || 0) + d);
+                });
+            });
+
+            let mainDirKey = '';
+            let mainDirDuration = -1;
+            globalDirDuration.forEach((dur, key) => {
+                if (dur > mainDirDuration) {
+                    mainDirDuration = dur;
+                    mainDirKey = key;
+                }
+            });
+
+            let mainPrefixKey = '';
+            let mainPrefixDuration = -1;
+            globalPrefixDuration.forEach((dur, key) => {
+                if (dur > mainPrefixDuration) {
+                    mainPrefixDuration = dur;
+                    mainPrefixKey = key;
+                }
+            });
+
+            function getDominantKey(countMap) {
+                let bestKey = '';
+                let bestCount = -1;
+                countMap.forEach((count, key) => {
+                    if (count > bestCount) {
+                        bestCount = count;
+                        bestKey = key;
+                    }
+                });
+                return bestKey;
+            }
+
+            // 判定哪些不连续块属于插播广告块
+            const blockIsAd = nonEmptyBlocks.map((block, idx) => {
+                if (block.hasExplicitAd) return true;
+                if (nonEmptyBlocks.length < 2) return false;
+                // 短视频/预告片（总时长不足 2 分钟）不做启发式整块剔除，避免误伤
+                if (totalPlaylistDuration < 120) return false;
+
+                const blockDir = getDominantKey(block.dirCounts);
+                const blockPrefix = getDominantKey(block.prefixCounts);
+                const isForeignDir = mainDirKey && blockDir !== mainDirKey;
+                const isForeignPrefix = mainPrefixKey && blockPrefix !== mainPrefixKey;
+                const isShortBlock = block.totalDuration > 0 && block.totalDuration <= 65 && block.segments.length <= 20;
+
+                // 规则 A：目录或文件名前缀与正片不一致，且时长 <= 65s（最常见的采集站插播广告）
+                if ((isForeignDir || isForeignPrefix) && isShortBlock) {
+                    return true;
+                }
+
+                // 规则 B：夹在两个更长正片块之间的极短不连续插播块（3s ~ 35s，<= 12 个分片）
+                const isSandwiched = idx > 0 && idx < nonEmptyBlocks.length - 1;
+                if (isSandwiched && block.totalDuration >= 3 && block.totalDuration <= 35 && block.segments.length <= 12) {
+                    const prevDur = nonEmptyBlocks[idx - 1].totalDuration;
+                    const nextDur = nonEmptyBlocks[idx + 1].totalDuration;
+                    if (prevDur > block.totalDuration * 1.5 && nextDur > block.totalDuration * 1.5) {
+                        return true;
+                    }
+                }
+
+                return false;
+            });
+
+            // 组装过滤后的 M3U8
+            const output = [...headerLines];
+            let droppedSegments = 0;
+            let droppedDuration = 0;
+            let keptSegments = 0;
+            let needDiscontinuityBeforeNext = false;
+            let emittedAnyBlock = false;
+            let activeKeyLine = '';
+            let activeMapLine = '';
+
+            nonEmptyBlocks.forEach((block, idx) => {
+                if (blockIsAd[idx]) {
+                    droppedSegments += block.segments.length;
+                    droppedDuration += block.totalDuration;
+                    // 若前后都有正片块，保留一个 DISCONTINUITY 让解码器平滑重同步
+                    if (emittedAnyBlock) {
+                        needDiscontinuityBeforeNext = true;
+                    }
+                    return;
+                }
+
+                const hadAdBefore = needDiscontinuityBeforeNext;
+                if (emittedAnyBlock) {
+                    // 原始块之间原本就有 DISCONTINUITY，或中间剔除了广告块：统一补一个 DISCONTINUITY
+                    output.push('#EXT-X-DISCONTINUITY');
+                    needDiscontinuityBeforeNext = false;
+                }
+
+                if (block.leadingTags.length > 0) {
+                    output.push(...block.leadingTags);
+                }
+
+                // 如果上一个广告块之前存在有效 KEY/MAP，而当前块未显式重申，则确保解码密钥不丢失
+                const blockStartsWithKey = block.segments[0]?.lines.some(l => l.trim().startsWith('#EXT-X-KEY'));
+                if (emittedAnyBlock && activeKeyLine && !blockStartsWithKey && hadAdBefore) {
+                    output.push(activeKeyLine);
+                }
+                const blockStartsWithMap = block.segments[0]?.lines.some(l => l.trim().startsWith('#EXT-X-MAP'));
+                if (emittedAnyBlock && activeMapLine && !blockStartsWithMap && hadAdBefore) {
+                    output.push(activeMapLine);
+                }
+
+                block.segments.forEach(seg => {
+                    if (seg.explicitAd) {
+                        droppedSegments += 1;
+                        droppedDuration += seg.duration;
+                        return;
+                    }
+                    output.push(...seg.lines);
+                    keptSegments += 1;
+                });
+
+                if (block.lastKeyLine) activeKeyLine = block.lastKeyLine;
+                if (block.lastMapLine) activeMapLine = block.lastMapLine;
+                emittedAnyBlock = true;
+            });
+
+            if (footerLines.length > 0) {
+                output.push(...footerLines);
             }
 
             // 安全阀：如果筛完一个分片都不剩，说明判断失误，原样返回避免播出空白
@@ -3248,7 +3588,14 @@
                 return m3u8Content;
             }
 
-            return filteredLines.join('\n');
+            if (droppedSegments > 0) {
+                console.info(`已过滤 ${droppedSegments} 个广告分片（约 ${Math.round(droppedDuration)} 秒）`);
+                if (typeof showPlayerNotice === 'function') {
+                    showPlayerNotice(`已自动过滤 ${Math.max(1, Math.round(droppedDuration))} 秒广告`, 1800);
+                }
+            }
+
+            return output.join('\n');
         }
         
 
@@ -4638,6 +4985,10 @@
             
             // 触摸开始事件
             playerElement.addEventListener('touchstart', function(e) {
+                // 点击中央控制按钮时不触发长按倍速
+                if (e.target && typeof e.target.closest === 'function' && e.target.closest('.libretv-center-controls')) {
+                    return;
+                }
                 // 检查视频是否正在播放，如果没有播放则不触发长按功能
                 if (mediaEl.paused) {
                     return; // 视频暂停时不触发长按功能

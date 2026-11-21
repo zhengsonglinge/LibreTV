@@ -665,63 +665,101 @@ body.playback-history-open {
     background-color: #0c0c0b;
 }
 
-#player .vjs-big-play-button {
-    width: 66px;
-    height: 66px;
-    margin-top: -33px;
-    margin-left: -33px;
-    padding: 0;
-    border: 1px solid rgba(255, 255, 255, 0.24);
-    border-radius: 50%;
-    background: rgba(12, 12, 11, 0.55);
-    backdrop-filter: blur(6px);
-    line-height: 1;
-    transition: background-color var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
+/* 中央浮层接管播放/暂停与前进/后退，隐藏 Video.js 默认大播放按钮与底部对应按钮 */
+#player .vjs-big-play-button,
+#player .vjs-control-bar .vjs-play-control,
+#player .vjs-control-bar [class*="vjs-skip-"] {
+    display: none !important;
 }
 
-#player .vjs-big-play-button .vjs-icon-placeholder {
+#player .libretv-center-controls {
     position: absolute;
-    inset: 0;
-}
-
-#player .vjs-big-play-button .vjs-icon-placeholder::before {
+    top: 50%;
+    left: 50%;
+    z-index: 15;
     display: flex;
     align-items: center;
     justify-content: center;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    padding-left: 0;
-    font-size: var(--text-5xl);
-    line-height: 1;
-    /* 三角图标的墨迹在字身里略偏右上，做 1px 级别的视觉校正 */
-    transform: translate(-1px, 1px);
+    gap: 28px;
+    transform: translate(-50%, -50%);
+    opacity: 1;
+    pointer-events: none;
+    transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out);
 }
 
-#player:hover .vjs-big-play-button {
-    background: rgba(36, 85, 245, 0.82);
+#player .libretv-center-btn {
+    position: relative;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    border-radius: 50%;
+    color: #fffdfa;
+    background: rgba(12, 12, 11, 0.56);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.36);
+    backdrop-filter: blur(8px);
+    cursor: pointer;
+    pointer-events: auto;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
+}
+
+#player .libretv-center-btn svg {
+    display: block;
+    flex: none;
+}
+
+#player .libretv-center-btn.is-play {
+    width: 66px;
+    height: 66px;
+    background: rgba(12, 12, 11, 0.64);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+#player .libretv-center-btn.is-play svg {
+    width: 28px;
+    height: 28px;
+}
+
+#player .libretv-center-btn.is-skip {
+    width: 50px;
+    height: 50px;
+    gap: 1px;
+}
+
+#player .libretv-center-btn.is-skip svg {
+    width: 20px;
+    height: 20px;
+}
+
+#player .libretv-center-skip-sec {
+    font-size: 0.62rem;
+    font-weight: 700;
+    line-height: 1;
+    opacity: 0.9;
+    font-variant-numeric: tabular-nums;
+}
+
+#player .libretv-center-btn:hover {
+    border-color: rgba(255, 255, 255, 0.44);
+    background: rgba(36, 85, 245, 0.84);
+}
+
+#player .libretv-center-btn:active {
+    transform: scale(0.92);
+}
+
+#player .libretv-center-btn:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: 3px;
 }
 
 #player .vjs-control-bar {
     background-color: rgba(12, 12, 11, 0.72);
     backdrop-filter: blur(10px) saturate(120%);
     font-size: var(--text-sm);
-}
-
-/* ------------------------------------------------------------------
-   控制条防溢出
-   Video.js 的 .vjs-control 是固定 4em/个、flex:none，总宽超过播放器宽度时
-   会被 #player.video-js 的 overflow:hidden 从右侧裁掉，最右边的全屏按钮首当其冲。
-
-   1) 前进 / 后退只在全屏出现 —— 窗口模式下两个按钮要吃掉 8em，
-      常驻就会把全屏按钮挤出可视区
-   2) 进度条允许压缩（默认最小 4em）
-   3) 依赖 responsive:true 打出的布局类（断点见 player.html 的 breakpoints），
-      小屏整体收窄字号，极窄时再让出画中画
-   ------------------------------------------------------------------ */
-#player:not(.vjs-fullscreen) [class*="vjs-skip-"] {
-    display: none;
 }
 
 #player .vjs-progress-control {
@@ -736,12 +774,22 @@ body.playback-history-open {
     display: none;
 }
 
-/* 无操作后快速收起控制条：播放中与暂停时都隐藏（播完 vjs-ended 时保留） */
+/* 无操作后快速收起控制条与中央按钮：播放中与暂停时都隐藏（播完 vjs-ended 时保留） */
 #player.vjs-has-started.vjs-user-inactive:not(.vjs-ended) .vjs-control-bar {
     visibility: visible;
     opacity: 0;
     pointer-events: none;
     transition: visibility 150ms, opacity 150ms;
+}
+
+#player.vjs-has-started.vjs-user-inactive:not(.vjs-ended) .libretv-center-controls {
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -50%) scale(0.96);
+}
+
+#player.vjs-has-started.vjs-user-inactive:not(.vjs-ended) .libretv-center-btn {
+    pointer-events: none;
 }
 
 #player .vjs-play-progress,
@@ -1322,10 +1370,6 @@ body.is-cinema .player-shortcuts-bar kbd {
     display: grid;
     grid-template-columns: repeat(8, minmax(0, 1fr));
     gap: 8px;
-    max-height: 292px;
-    padding: 2px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
 }
 
 .episode-btn {
@@ -1504,10 +1548,7 @@ body.is-cinema .player-shortcuts-bar kbd {
     align-items: start;
     gap: 10px;
     min-height: 108px;
-    max-height: 420px;
-    padding: 2px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    padding: 0;
 }
 
 .source-switch-loading,
@@ -1657,6 +1698,7 @@ body.is-cinema .source-switch-state.is-used {
 
 .controls-locked #player .vjs-control-bar,
 .controls-locked #player .vjs-big-play-button,
+.controls-locked #player .libretv-center-controls,
 .controls-locked #player .vjs-loading-spinner {
     opacity: 0 !important;
     pointer-events: none !important;
@@ -1763,6 +1805,30 @@ body.is-cinema .source-switch-state.is-used {
         border-radius: var(--radius-md);
     }
 
+    #player .libretv-center-controls {
+        gap: 20px;
+    }
+
+    #player .libretv-center-btn.is-play {
+        width: 56px;
+        height: 56px;
+    }
+
+    #player .libretv-center-btn.is-play svg {
+        width: 24px;
+        height: 24px;
+    }
+
+    #player .libretv-center-btn.is-skip {
+        width: 44px;
+        height: 44px;
+    }
+
+    #player .libretv-center-btn.is-skip svg {
+        width: 18px;
+        height: 18px;
+    }
+
     .player-console {
         flex-wrap: wrap;
         gap: 10px;
@@ -1857,6 +1923,30 @@ body.is-cinema .source-switch-state.is-used {
 
     .player-container {
         border-radius: var(--radius-md);
+    }
+
+    #player .libretv-center-controls {
+        gap: 20px;
+    }
+
+    #player .libretv-center-btn.is-play {
+        width: 56px;
+        height: 56px;
+    }
+
+    #player .libretv-center-btn.is-play svg {
+        width: 24px;
+        height: 24px;
+    }
+
+    #player .libretv-center-btn.is-skip {
+        width: 44px;
+        height: 44px;
+    }
+
+    #player .libretv-center-btn.is-skip svg {
+        width: 18px;
+        height: 18px;
     }
 
     .player-console {
@@ -1976,7 +2066,6 @@ body.is-cinema .source-switch-state.is-used {
     .source-switch-list {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 8px;
-        max-height: none;
         padding: 0;
     }
 
@@ -1984,7 +2073,6 @@ body.is-cinema .source-switch-state.is-used {
     #episodesList {
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 7px;
-        max-height: 248px;
     }
 
     .episode-btn {
