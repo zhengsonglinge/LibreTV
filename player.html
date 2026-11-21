@@ -563,16 +563,15 @@
                     }
                 }
                 if (playableVideoUrl) {
-                    initPlayer(playableVideoUrl, sourceCode);
-                }
-                
-                // 从URL参数或本地上次进度恢复播放位置
-                if (resumePosition > 0) {
-                    restorePlaybackPosition(resumePosition, {
-                        index: currentEpisodeIndex,
-                        url: videoUrl,
-                        expectedDuration: resumeDuration
-                    });
+                    const restoreConfig = resumePosition > 0
+                        ? {
+                            position: resumePosition,
+                            index: currentEpisodeIndex,
+                            url: videoUrl,
+                            expectedDuration: resumeDuration
+                        }
+                        : null;
+                    initPlayer(playableVideoUrl, sourceCode, restoreConfig);
                 }
             } else {
                 showError('无效的视频链接');
@@ -1700,7 +1699,7 @@
         }
 
         // 初始化播放器（Video.js）
-        async function initPlayer(videoUrl, sourceCode) {
+        async function initPlayer(videoUrl, sourceCode, restoreConfig = null) {
             resetPlayerQuality();
 
             if (!/^https?:\/\//i.test(videoUrl || '')) {
@@ -1741,6 +1740,10 @@
                 if (!player.isNative) {
                     setupLongPressSpeedControl();
                 }
+            }
+
+            if (restoreConfig && restoreConfig.position > 0) {
+                restorePlaybackPosition(restoreConfig.position, restoreConfig);
             }
 
             loadPlayerSource(videoUrl, playbackPlan);
@@ -3810,17 +3813,15 @@
                         console.warn('停止旧播放器失败:', error);
                     }
                 }
-                initPlayer(url, sourceCode);
-                if (options.restorePosition) {
-                    restorePlaybackPosition(
-                        options.position ?? getSavedPlaybackPosition(currentVideoTitle, index),
-                        {
-                            index: index,
-                            url: requestedUrl,
-                            expectedDuration: options.expectedDuration
-                        }
-                    );
-                }
+                const restoreConfig = options.restorePosition
+                    ? {
+                        position: options.position ?? getSavedPlaybackPosition(currentVideoTitle, index),
+                        index: index,
+                        url: requestedUrl,
+                        expectedDuration: options.expectedDuration
+                    }
+                    : null;
+                initPlayer(url, sourceCode, restoreConfig);
             }
             
             // 更新UI
