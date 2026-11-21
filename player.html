@@ -2064,13 +2064,32 @@
             return tech && typeof tech.el === 'function' ? tech.el() : null;
         }
 
+        let nativeHlsAdFilterFallbackUrl = '';
+
+        function buildNativeHlsFilteredUrl(rawUrl) {
+            const proxyPrefix = typeof PROXY_URL === 'string' ? PROXY_URL : '/proxy/';
+            return `${proxyPrefix}${encodeURIComponent(rawUrl)}?adfilter=1&direct_seg=1`;
+        }
+
         // 加载 / 切换视频源
-        function loadPlayerSource(url, playbackPlan) {
+        function loadPlayerSource(url, playbackPlan, options = {}) {
             if (!player) return;
 
             currentPlaybackEngine = playbackPlan.engine || '';
             setPlayerPlaybackEngine(currentPlaybackEngine);
             resetPlayerQuality();
+
+            // iPad / iPhone / Safari 原生 HLS：开启广告过滤时仅让 M3U8 清单走一次代理过滤，
+            // .ts 视频分片仍由代理重写为原始 CDN 绝对地址直连拉取，不牺牲速度与原生体验。
+            let effectiveUrl = url;
+            nativeHlsAdFilterFallbackUrl = '';
+            if (!options.skipAdFilterProxy
+                && currentPlaybackEngine === 'native-hls'
+                && adFilteringEnabled
+                && /^https?:\/\//i.test(url || '')) {
+                effectiveUrl = buildNativeHlsFilteredUrl(url);
+                nativeHlsAdFilterFallbackUrl = url;
+            }
 
             // 只有真正走 hls.js 时才需要分片缓存。
             // iOS / iPadOS / Safari 走原生 HLS，不需要（也不该）在这里碰 IndexedDB。
@@ -2083,8 +2102,8 @@
 
             try {
                 player.src({
-                    src: url,
-                    type: getVideoJsSourceType(playbackPlan, url)
+                    src: effectiveUrl,
+                    type: getVideoJsSourceType(playbackPlan, effectiveUrl)
                 });
             } catch (error) {
                 console.error('加载视频源失败:', error);
@@ -2198,6 +2217,7 @@
             });
 
             player.on('loadedmetadata', function() {
+                nativeHlsAdFilterFallbackUrl = '';
                 document.getElementById('loading').style.display = 'none';
                 videoHasEnded = false;
 
@@ -2209,6 +2229,13 @@
             });
 
             player.on('error', function() {
+                if (nativeHlsAdFilterFallbackUrl && (!mediaEl || mediaEl.currentTime <= 1)) {
+                    const fallbackUrl = nativeHlsAdFilterFallbackUrl;
+                    nativeHlsAdFilterFallbackUrl = '';
+                    console.warn('原生 HLS 代理去广告加载失败，自动回退直连播放:', fallbackUrl);
+                    loadPlayerSource(fallbackUrl, { engine: 'native-hls' }, { skipAdFilterProxy: true });
+                    return;
+                }
                 if (mediaEl && mediaEl.currentTime > 1) {
                     // 播放中途的偶发错误。原生 HLS 重试时会连续上报 error，
                     // 不做节流就会不停销毁/重建 toast 节点，反而把页面拖卡。

@@ -172,10 +172,13 @@ function resolveUrl(baseUrl, relativeUrl) {
 }
 
 // ** 已修正：确保生成 /proxy/ 前缀的链接 **
-function rewriteUrlToProxy(targetUrl) {
+function rewriteUrlToProxy(targetUrl, options = {}) {
     if (!targetUrl || typeof targetUrl !== 'string') return '';
-    // 返回与 vercel.json 的 "source" 和前端 PROXY_URL 一致的路径
-    return `/proxy/${encodeURIComponent(targetUrl)}`;
+    const params = [];
+    if (options.adFilter) params.push('adfilter=1');
+    if (options.directSeg) params.push('direct_seg=1');
+    const suffix = params.length > 0 ? `?${params.join('&')}` : '';
+    return `/proxy/${encodeURIComponent(targetUrl)}${suffix}`;
 }
 
 function getRandomUserAgent() {
@@ -240,23 +243,224 @@ function isM3u8Content(content, contentType) {
     return content && typeof content === 'string' && content.trim().startsWith('#EXTM3U');
 }
 
-function processKeyLine(line, baseUrl) {
+function processKeyLine(line, baseUrl, options = {}) {
     return line.replace(/URI="([^"]+)"/, (match, uri) => {
         const absoluteUri = resolveUrl(baseUrl, uri);
         logDebug(`处理 KEY URI: 原始='${uri}', 绝对='${absoluteUri}'`);
-        return `URI="${rewriteUrlToProxy(absoluteUri)}"`;
+        return `URI="${options.directSeg ? absoluteUri : rewriteUrlToProxy(absoluteUri)}"`;
     });
 }
 
-function processMapLine(line, baseUrl) {
-     return line.replace(/URI="([^"]+)"/, (match, uri) => {
+function processMapLine(line, baseUrl, options = {}) {
+    return line.replace(/URI="([^"]+)"/, (match, uri) => {
         const absoluteUri = resolveUrl(baseUrl, uri);
         logDebug(`处理 MAP URI: 原始='${uri}', 绝对='${absoluteUri}'`);
-        return `URI="${rewriteUrlToProxy(absoluteUri)}"`;
-     });
- }
+        return `URI="${options.directSeg ? absoluteUri : rewriteUrlToProxy(absoluteUri)}"`;
+    });
+}
 
-function processMediaPlaylist(url, content) {
+function isAdSegmentUrl(rawUrl) {
+    if (!rawUrl) return false;
+    try {
+        const parsed = new URL(rawUrl, 'https://placeholder.invalid/');
+        const tail = parsed.pathname.split('/').filter(Boolean).slice(-3);
+        return tail.some(segment => {
+            const base = segment.replace(/\.(?:ts|m4s|mp4|m4v|aac|m4a|cmfv|cmfa)$/i, '');
+            return /^(?:ad|ads|adv|advert|adverts|adjump|adserver|adservice|guanggao|preroll|midroll|postroll)$/i.test(base)
+                || /^(?:ad|ads|adv|advert)[-_]?(?:pre|mid|post)?(?:roll|jump|clip|seg)?\d*$/i.test(base);
+        });
+    } catch {
+        return false;
+    }
+}
+
+function getSegmentSignature(rawUrl) {
+    try {
+        const parsed = new URL(rawUrl, 'https://placeholder.invalid/');
+        const host = parsed.hostname === 'placeholder.invalid' ? '' : parsed.hostname.toLowerCase();
+        const parts = parsed.pathname.split('/').filter(Boolean);
+        const fileName = parts.pop() || '';
+        const dir = parts.join('/');
+        const stem = fileName.replace(/\.(?:ts|m4s|mp4|m4v|aac|m4a|cmfv|cmfa)$/i, '');
+        const prefixMatch = stem.match(/^([a-zA-Z_-]+)\d+$/);
+        const filePrefix = prefixMatch ? prefixMatch[1].toLowerCase() : '';
+        return {
+            dirKey: `${host}/${dir}`,
+            prefixKey: `${host}/${dir}|${filePrefix}`
+        };
+    } catch {
+        return { dirKey: '', prefixKey: '' };
+    }
+}
+
+function filterAdsFromM3U8(m3u8Content, baseUrl) {
+    if (!m3u8Content || typeof m3u8Content !== 'string') return m3u8Content || '';
+    if (m3u8Content.includes('#EXT-X-STREAM-INF')) return m3u8Content;
+
+    const lines = m3u8Content.split(/\r?\n/);
+    const headerLines = [];
+    const footerLines = [];
+    const blocks = [];
+    let currentBlock = null;
+    let pendingSegmentLines = [];
+    let pendingDuration = 0;
+    let seenSegmentOrDisc = false;
+
+    const ensureBlock = () => {
+        if (!currentBlock) {
+            currentBlock = {
+                segments: [],
+                totalDuration: 0,
+                hasExplicitAd: false,
+                dirCounts: new Map(),
+                prefixCounts: new Map(),
+                leadingTags: [],
+                lastKeyLine: '',
+                lastMapLine: ''
+            };
+            blocks.push(currentBlock);
+        }
+        return currentBlock;
+    };
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed === '#EXT-X-ENDLIST') {
+            footerLines.push(line);
+            continue;
+        }
+        if (trimmed === '#EXT-X-DISCONTINUITY') {
+            seenSegmentOrDisc = true;
+            if (currentBlock && currentBlock.segments.length > 0) currentBlock = null;
+            ensureBlock();
+            continue;
+        }
+        if (trimmed.startsWith('#')) {
+            if (!seenSegmentOrDisc && !trimmed.startsWith('#EXTINF') && !trimmed.startsWith('#EXT-X-BYTERANGE') && !trimmed.startsWith('#EXT-X-KEY') && !trimmed.startsWith('#EXT-X-MAP')) {
+                headerLines.push(line);
+                continue;
+            }
+            seenSegmentOrDisc = true;
+            const block = ensureBlock();
+            if (trimmed.startsWith('#EXTINF')) {
+                const m = trimmed.match(/^#EXTINF:\s*([\d.]+)/i);
+                pendingDuration = m ? parseFloat(m[1]) || 0 : 0;
+                pendingSegmentLines.push(line);
+            } else if (trimmed.startsWith('#EXT-X-KEY')) {
+                block.lastKeyLine = line;
+                pendingSegmentLines.push(line);
+            } else if (trimmed.startsWith('#EXT-X-MAP')) {
+                block.lastMapLine = line;
+                pendingSegmentLines.push(line);
+            } else if (block.segments.length === 0 && pendingSegmentLines.length === 0) {
+                block.leadingTags.push(line);
+            } else {
+                pendingSegmentLines.push(line);
+            }
+            continue;
+        }
+
+        seenSegmentOrDisc = true;
+        const block = ensureBlock();
+        const absUrl = resolveUrl(baseUrl, trimmed);
+        const sig = getSegmentSignature(absUrl);
+        const explicitAd = isAdSegmentUrl(absUrl);
+        if (explicitAd) block.hasExplicitAd = true;
+        block.segments.push({ uri: trimmed, duration: pendingDuration, lines: [...pendingSegmentLines, line], explicitAd, sig });
+        block.totalDuration += pendingDuration;
+        block.dirCounts.set(sig.dirKey, (block.dirCounts.get(sig.dirKey) || 0) + 1);
+        block.prefixCounts.set(sig.prefixKey, (block.prefixCounts.get(sig.prefixKey) || 0) + 1);
+        pendingSegmentLines = [];
+        pendingDuration = 0;
+    }
+
+    const nonEmptyBlocks = blocks.filter(b => b.segments.length > 0);
+    if (nonEmptyBlocks.length === 0) return m3u8Content;
+
+    const globalDirDur = new Map();
+    const globalPrefixDur = new Map();
+    let totalDuration = 0;
+    for (const block of nonEmptyBlocks) {
+        totalDuration += block.totalDuration;
+        for (const seg of block.segments) {
+            const d = seg.duration || 1;
+            globalDirDur.set(seg.sig.dirKey, (globalDirDur.get(seg.sig.dirKey) || 0) + d);
+            globalPrefixDur.set(seg.sig.prefixKey, (globalPrefixDur.get(seg.sig.prefixKey) || 0) + d);
+        }
+    }
+
+    const pickMax = (map) => {
+        let best = '';
+        let bestVal = -1;
+        for (const [k, v] of map.entries()) {
+            if (v > bestVal) { bestVal = v; best = k; }
+        }
+        return best;
+    };
+
+    const mainDirKey = pickMax(globalDirDur);
+    const mainPrefixKey = pickMax(globalPrefixDur);
+
+    const blockIsAd = nonEmptyBlocks.map((block, idx) => {
+        if (block.hasExplicitAd) return true;
+        if (nonEmptyBlocks.length < 2 || totalDuration < 120) return false;
+        const isForeign = (mainDirKey && pickMax(block.dirCounts) !== mainDirKey)
+            || (mainPrefixKey && pickMax(block.prefixCounts) !== mainPrefixKey);
+        const isShort = block.totalDuration > 0 && block.totalDuration <= 65 && block.segments.length <= 20;
+        if (isForeign && isShort) return true;
+
+        const isSandwiched = idx > 0 && idx < nonEmptyBlocks.length - 1;
+        if (isSandwiched && block.totalDuration >= 3 && block.totalDuration <= 35 && block.segments.length <= 12) {
+            if (nonEmptyBlocks[idx - 1].totalDuration > block.totalDuration * 1.5
+                && nonEmptyBlocks[idx + 1].totalDuration > block.totalDuration * 1.5) {
+                return true;
+            }
+        }
+        return false;
+    });
+
+    const output = [...headerLines];
+    let dropped = 0;
+    let kept = 0;
+    let needDisc = false;
+    let emitted = false;
+    let activeKeyLine = '';
+    let activeMapLine = '';
+
+    nonEmptyBlocks.forEach((block, idx) => {
+        if (blockIsAd[idx]) {
+            dropped += block.segments.length;
+            if (emitted) needDisc = true;
+            return;
+        }
+        const hadAdBefore = needDisc;
+        if (emitted) {
+            output.push('#EXT-X-DISCONTINUITY');
+            needDisc = false;
+        }
+        if (block.leadingTags.length > 0) output.push(...block.leadingTags);
+        const startsWithKey = block.segments[0]?.lines.some(l => l.trim().startsWith('#EXT-X-KEY'));
+        if (emitted && activeKeyLine && !startsWithKey && hadAdBefore) output.push(activeKeyLine);
+        const startsWithMap = block.segments[0]?.lines.some(l => l.trim().startsWith('#EXT-X-MAP'));
+        if (emitted && activeMapLine && !startsWithMap && hadAdBefore) output.push(activeMapLine);
+
+        for (const seg of block.segments) {
+            if (seg.explicitAd) { dropped += 1; continue; }
+            output.push(...seg.lines);
+            kept += 1;
+        }
+        if (block.lastKeyLine) activeKeyLine = block.lastKeyLine;
+        if (block.lastMapLine) activeMapLine = block.lastMapLine;
+        emitted = true;
+    });
+
+    if (footerLines.length > 0) output.push(...footerLines);
+    if (kept === 0 && dropped > 0) return m3u8Content;
+    return output.join('\n');
+}
+
+function processMediaPlaylist(url, content, options = {}) {
     // 防御：若拿到二进制内容，先按 UTF-8 解码
     if (Buffer.isBuffer(content)) {
         content = content.toString('utf8');
@@ -265,6 +469,9 @@ function processMediaPlaylist(url, content) {
     if (!baseUrl) {
         logDebug(`无法确定媒体列表的 Base URL: ${url}，相对路径可能无法处理。`);
     }
+    if (options.adFilter) {
+        content = filterAdsFromM3U8(content, baseUrl);
+    }
     const lines = content.split('\n');
     const output = [];
     for (let i = 0; i < lines.length; i++) {
@@ -272,15 +479,15 @@ function processMediaPlaylist(url, content) {
         // 保留最后一个空行
         if (!line && i === lines.length - 1) { output.push(line); continue; }
         if (!line) continue; // 跳过中间空行
-        // 广告过滤已禁用
-        if (line.startsWith('#EXT-X-KEY')) { output.push(processKeyLine(line, baseUrl)); continue; }
-        if (line.startsWith('#EXT-X-MAP')) { output.push(processMapLine(line, baseUrl)); continue; }
+        if (line.startsWith('#EXT-X-KEY')) { output.push(processKeyLine(line, baseUrl, options)); continue; }
+        if (line.startsWith('#EXT-X-MAP')) { output.push(processMapLine(line, baseUrl, options)); continue; }
         if (line.startsWith('#EXTINF')) { output.push(line); continue; }
-        // 处理 URL 行
+        // 处理 URL 行：directSeg 模式直接输出原始 CDN 绝对地址，让 iPad/Safari 直连拉取 .ts 分片
         if (!line.startsWith('#')) {
             const absoluteUrl = resolveUrl(baseUrl, line);
             logDebug(`重写媒体片段: 原始='${line}', 解析后='${absoluteUrl}'`);
-            output.push(rewriteUrlToProxy(absoluteUrl)); continue;
+            output.push(options.directSeg ? absoluteUrl : rewriteUrlToProxy(absoluteUrl));
+            continue;
         }
         // 保留其他 M3U8 标签
         output.push(line);
@@ -288,19 +495,19 @@ function processMediaPlaylist(url, content) {
     return output.join('\n');
 }
 
-async function processM3u8Content(targetUrl, content, recursionDepth = 0) {
+async function processM3u8Content(targetUrl, content, recursionDepth = 0, options = {}) {
     // 判断是主列表还是媒体列表
     if (content.includes('#EXT-X-STREAM-INF') || content.includes('#EXT-X-MEDIA:')) {
         logDebug(`检测到主播放列表: ${targetUrl} (深度: ${recursionDepth})`);
-        return await processMasterPlaylist(targetUrl, content, recursionDepth);
+        return await processMasterPlaylist(targetUrl, content, options);
     }
     logDebug(`检测到媒体播放列表: ${targetUrl} (深度: ${recursionDepth})`);
-    return processMediaPlaylist(targetUrl, content);
+    return processMediaPlaylist(targetUrl, content, options);
 }
 
-async function processMasterPlaylist(url, content) {
-    // 保留所有码率档位并仅重写子清单与音轨 URI，让前端 hls.js 正常执行 ABR 自适应码率切换，
-    // 同时省去代理侧额外一次递归拉取子清单的 RTT。
+async function processMasterPlaylist(url, content, options = {}) {
+    // 保留所有码率档位并仅重写子清单与音轨 URI，让前端 hls.js / 原生 HLS 正常执行 ABR 自适应码率切换，
+    // 同时透传 adfilter/direct_seg 标志给子清单。
     if (Buffer.isBuffer(content)) {
         content = content.toString('utf8');
     }
@@ -319,24 +526,24 @@ async function processMasterPlaylist(url, content) {
         if (line.startsWith('#EXT-X-MEDIA:') || line.startsWith('#EXT-X-I-FRAME-STREAM-INF:')) {
             output.push(line.replace(/URI="([^"]+)"/, (match, uri) => {
                 const absoluteUri = resolveUrl(baseUrl, uri);
-                return `URI="${rewriteUrlToProxy(absoluteUri)}"`;
+                return `URI="${rewriteUrlToProxy(absoluteUri, options)}"`;
             }));
             continue;
         }
 
         if (line.startsWith('#EXT-X-KEY')) {
-            output.push(processKeyLine(line, baseUrl));
+            output.push(processKeyLine(line, baseUrl, options));
             continue;
         }
 
         if (line.startsWith('#EXT-X-MAP')) {
-            output.push(processMapLine(line, baseUrl));
+            output.push(processMapLine(line, baseUrl, options));
             continue;
         }
 
         if (!line.startsWith('#')) {
             const absoluteUrl = resolveUrl(baseUrl, line);
-            output.push(rewriteUrlToProxy(absoluteUrl));
+            output.push(rewriteUrlToProxy(absoluteUrl, options));
             continue;
         }
 
@@ -444,8 +651,12 @@ export default async function handler(req, res) {
 
         // --- 如果是 M3U8，处理并返回 ---
         if (isM3u8Content(content, contentType)) {
-            console.info(`正在处理 M3U8 内容: ${targetUrl}`);
-            const processedM3u8 = await processM3u8Content(targetUrl, content);
+            const m3u8Options = {
+                adFilter: req.query?.adfilter === '1',
+                directSeg: req.query?.direct_seg === '1'
+            };
+            console.info(`正在处理 M3U8 内容: ${targetUrl}`, m3u8Options);
+            const processedM3u8 = await processM3u8Content(targetUrl, content, 0, m3u8Options);
 
             console.info(`成功处理 M3U8: ${targetUrl}`);
             // 发送处理后的 M3U8 响应
